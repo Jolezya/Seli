@@ -1,0 +1,19 @@
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Real configuration never enters the repo: it holds this family's household
+# phrase, and a committed copy would overwrite theirs on the next deploy.
+.env
+.env.*
+!.env.example
+public/config.js
+
+.DS_Store
+*.log
+npm-debug.log*
+.vscode/*
+!.vscode/extensions.json
+.idea/
+coverage/
