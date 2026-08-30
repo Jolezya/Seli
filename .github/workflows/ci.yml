@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    name: Tests and build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      # Guards the trap that kept fixes from reaching the phones: if the cache
+      # version is not stamped, every installed PWA keeps serving old code after
+      # a deploy. A build that ships the placeholder is a broken build.
+      - name: Verify the service worker cache version was stamped
+        run: |
+          if grep -q '__SW_VERSION__' dist/sw.js; then
+            echo "::error file=vite.config.js::dist/sw.js still contains the __SW_VERSION__ placeholder — the cache-busting plugin did not run, so a deploy would not reach installed PWAs."
+            exit 1
+          fi
+          echo "Stamped: $(grep -m1 'const CACHE_VERSION' dist/sw.js)"

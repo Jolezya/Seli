@@ -1,0 +1,44 @@
+/* Global reset. `box-sizing: border-box` everywhere and `overflow-x: hidden` on
+   the root are what stop a wide chart or a long word from blowing the layout
+   out sideways on a phone (spec §11). */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+  width: 100%;
+  max-width: 100%;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, sans-serif;
+  font-size: 14px;
+  line-height: 1.4;
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior-y: contain;
+}
+
+#root { width: 100%; max-width: 100%; }
+
+button, input, select, textarea { font: inherit; }
+input { -webkit-appearance: none; appearance: none; }
+
+/* The running-session dot. */
+@keyframes checkin-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.45; transform: scale(0.82); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+::selection { background: rgba(120, 120, 255, 0.25); }
