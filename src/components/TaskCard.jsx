@@ -92,9 +92,13 @@ export default function TaskCard({ theme, events, store, now }) {
           label="Tummy time"
           category="tummy"
           done={tummyDone}
-          // An empty track under an untouched task looks like a rendering
-          // artifact, so the bar appears only once there is progress in it.
-          below={tummyMin > 0 ? <Progress theme={theme} value={tummyMin} goal={goal} category="tummy" /> : null}
+          // Always visible: an empty track spanning the row reads as "none of
+          // this goal yet", which is information. It only looked like a
+          // rendering fault when it was a short bar floating under the buttons.
+          // The fill uses exact elapsed time, not whole minutes, so it starts
+          // moving the moment a session begins rather than sitting at zero for
+          // the first minute.
+          below={<Progress theme={theme} minutes={tummyMs / MINUTE} goal={goal} category="tummy" />}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <Chip
@@ -159,8 +163,8 @@ function Done({ theme, children }) {
   );
 }
 
-function Progress({ theme, value, goal, category }) {
-  const pct = Math.min(100, goal > 0 ? (value / goal) * 100 : 0);
+function Progress({ theme, minutes, goal, category }) {
+  const pct = Math.min(100, goal > 0 ? Math.max(0, minutes / goal) * 100 : 0);
   return (
     <div style={{
       width: '100%', height: 5, borderRadius: 999,
