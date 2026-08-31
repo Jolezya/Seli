@@ -1,7 +1,7 @@
 {
   "name": "ChEckIn",
   "short_name": "ChEckIn",
-  "description": "Track a newborn's feeds, sleep, nappies and weight.",
+  "description": "Track a newborn's feeds, sleep, diapers and weight.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
@@ -15,8 +15,8 @@
     { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ],
   "shortcuts": [
-    { "name": "Log wet nappy", "short_name": "Wet", "url": "/?log=wet", "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }] },
-    { "name": "Log poop nappy", "short_name": "Poop", "url": "/?log=poop", "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Log wet diaper", "short_name": "Wet", "url": "/?log=wet", "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Log poop diaper", "short_name": "Poop", "url": "/?log=poop", "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }] },
     { "name": "Log a feed", "short_name": "Feed", "url": "/?log=nurse", "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }] }
   ]
 }
