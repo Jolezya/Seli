@@ -1,8 +1,11 @@
-// Generates the PWA icons with no image dependencies: a raw PNG encoder plus a
-// little vector maths. Run `npm run icons` to regenerate.
+// Generates the app icons with no image dependencies: a raw PNG encoder plus a
+// little geometry. Run `npm run icons` to regenerate.
 //
-// Both icons are full-bleed so they work as `maskable` — the check mark stays
-// well inside the centre 80% safe zone that Android may crop to a circle.
+// The mark is an S monogram — Seli's initial — built from two elliptical arcs
+// that meet on a diagonal spine, rather than a typed letter. Being constructed
+// rather than set means it stays even at any size and needs no font at build
+// time. Both icons are full-bleed so they work as `maskable`, and the S sits
+// inside the centre 80% safe zone that Android may crop to a circle.
 
 import { deflateSync } from 'node:zlib';
 import { writeFileSync, mkdirSync } from 'node:fs';
@@ -10,6 +13,22 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const OUT = resolve(dirname(fileURLToPath(import.meta.url)), '../public/icons');
+
+// Design space is 192x192; every size below is scaled from it.
+const D = 192;
+const BG_TOP = [0x6c, 0x79, 0xda];
+const BG_BOTTOM = [0x39, 0x40, 0x8f];
+const INK = [0xff, 0xff, 0xff];
+const STROKE = 16;            // stroke width in design units
+const RADIUS = STROKE / 2;
+
+// The two bowls of the S. Each is an elliptical arc given by its centre, its
+// radii, and the angles it sweeps between (degrees, y pointing down). They
+// share the point (96, 96), which is the middle of the letter.
+const ARCS = [
+  { cx: 96, cy: 68,  rx: 33, ry: 28, from: -20, to: -270 },  // upper bowl
+  { cx: 96, cy: 124, rx: 33, ry: 28, from: -90, to: 160 },   // lower bowl
+];
 
 const CRC_TABLE = (() => {
   const table = new Int32Array(256);
@@ -56,50 +75,64 @@ function encodePNG(width, height, rgba) {
   ]);
 }
 
-/** Shortest distance from a point to a line segment. */
-function distanceToSegment(px, py, ax, ay, bx, by) {
-  const dx = bx - ax;
-  const dy = by - ay;
-  const lenSq = dx * dx + dy * dy;
-  const t = lenSq ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / lenSq)) : 0;
-  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
-}
+const mix = (a, b, t) => a + (b - a) * t;
 
-function mix(a, b, t) {
-  return a + (b - a) * t;
+/** Points along the letter, densely enough that consecutive discs overlap. */
+function samplePath(scale) {
+  const points = [];
+  for (const arc of ARCS) {
+    const steps = Math.max(240, Math.ceil(Math.abs(arc.to - arc.from) * 4));
+    for (let i = 0; i <= steps; i++) {
+      const deg = mix(arc.from, arc.to, i / steps);
+      const rad = (deg * Math.PI) / 180;
+      points.push([
+        (arc.cx + arc.rx * Math.cos(rad)) * scale,
+        (arc.cy + arc.ry * Math.sin(rad)) * scale,
+      ]);
+    }
+  }
+  return points;
 }
 
 function drawIcon(size) {
+  const scale = size / D;
+  const radius = RADIUS * scale;
   const rgba = Buffer.alloc(size * size * 4);
-  // Background: the app's indigo, deepening towards the bottom.
-  const top = [0x5B, 0x6A, 0xCD];
-  const bottom = [0x36, 0x3F, 0x9C];
 
-  // The check mark, in units of the canvas.
-  const s = size;
-  const stroke = s * 0.085;
-  const p1 = [s * 0.28, s * 0.52];
-  const p2 = [s * 0.44, s * 0.68];
-  const p3 = [s * 0.73, s * 0.34];
+  // Distance to the nearest point on the letter. Splatting a local box around
+  // each sample keeps this linear in the stroke's area rather than quadratic
+  // in the canvas.
+  const dist = new Float32Array(size * size).fill(Infinity);
+  const reach = Math.ceil(radius + 2);
+  for (const [px, py] of samplePath(scale)) {
+    const x0 = Math.max(0, Math.floor(px - reach));
+    const x1 = Math.min(size - 1, Math.ceil(px + reach));
+    const y0 = Math.max(0, Math.floor(py - reach));
+    const y1 = Math.min(size - 1, Math.ceil(py + reach));
+    for (let y = y0; y <= y1; y++) {
+      for (let x = x0; x <= x1; x++) {
+        const d = Math.hypot(x + 0.5 - px, y + 0.5 - py);
+        const i = y * size + x;
+        if (d < dist[i]) dist[i] = d;
+      }
+    }
+  }
 
-  for (let y = 0; y < s; y++) {
-    const t = y / (s - 1);
-    for (let x = 0; x < s; x++) {
-      const i = (y * s + x) * 4;
-      let r = mix(top[0], bottom[0], t);
-      let g = mix(top[1], bottom[1], t);
-      let b = mix(top[2], bottom[2], t);
+  for (let y = 0; y < size; y++) {
+    const t = y / (size - 1);
+    for (let x = 0; x < size; x++) {
+      const i = (y * size + x) * 4;
+      let r = mix(BG_TOP[0], BG_BOTTOM[0], t);
+      let g = mix(BG_TOP[1], BG_BOTTOM[1], t);
+      let b = mix(BG_TOP[2], BG_BOTTOM[2], t);
 
-      const d = Math.min(
-        distanceToSegment(x + 0.5, y + 0.5, p1[0], p1[1], p2[0], p2[1]),
-        distanceToSegment(x + 0.5, y + 0.5, p2[0], p2[1], p3[0], p3[1]),
-      );
-      // Anti-alias across one pixel at the stroke edge.
-      const alpha = Math.max(0, Math.min(1, (stroke / 2 + 0.5 - d)));
+      // One pixel of coverage falloff at the stroke edge, so the curve reads
+      // as smooth rather than stepped.
+      const alpha = Math.max(0, Math.min(1, radius + 0.5 - dist[y * size + x]));
       if (alpha > 0) {
-        r = mix(r, 255, alpha);
-        g = mix(g, 255, alpha);
-        b = mix(b, 255, alpha);
+        r = mix(r, INK[0], alpha);
+        g = mix(g, INK[1], alpha);
+        b = mix(b, INK[2], alpha);
       }
 
       rgba[i] = Math.round(r);
@@ -108,7 +141,7 @@ function drawIcon(size) {
       rgba[i + 3] = 255;
     }
   }
-  return encodePNG(s, s, rgba);
+  return encodePNG(size, size, rgba);
 }
 
 mkdirSync(OUT, { recursive: true });
@@ -117,6 +150,5 @@ for (const size of [192, 512]) {
   writeFileSync(file, drawIcon(size));
   console.log(`wrote ${file}`);
 }
-// Apple touch icon reuses the 192px art.
 writeFileSync(resolve(OUT, 'apple-touch-icon.png'), drawIcon(180));
 console.log('wrote apple-touch-icon.png');
