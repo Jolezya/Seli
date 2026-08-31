@@ -1,9 +1,9 @@
 // Header: identity, date, and the three controls that keep the app honest —
 // the sync dot, the refresh button and the theme toggle.
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { STATUS } from '../lib/sync.js';
-import { timeAgo } from '../lib/time.js';
+import { timeAgo, clockTime } from '../lib/time.js';
 import { Muted } from '../ui.jsx';
 
 /** Colour and words for each sync state (spec §9.4). */
@@ -39,10 +39,32 @@ export function statusPresentation(theme, status) {
 export default function Header({ theme, status, onRefresh, onToggleTheme, push }) {
   const [expanded, setExpanded] = useState(false);
   const [spinning, setSpinning] = useState(false);
+  const [clock, setClock] = useState(() => new Date());
   const s = statusPresentation(theme, status);
-  const today = new Date().toLocaleDateString(undefined, {
+
+  // Tick on the minute boundary itself. Riding the app's 20-second tick would
+  // let the displayed minute lag by up to 20 seconds, which is exactly the
+  // thing you would notice while staring at a clock at 3am.
+  useEffect(() => {
+    let timer;
+    const schedule = () => {
+      const now = new Date();
+      setClock(now);
+      const msToNextMinute = 60_000 - (now.getSeconds() * 1000 + now.getMilliseconds());
+      timer = setTimeout(schedule, msToNextMinute + 20);
+    };
+    schedule();
+    return () => clearTimeout(timer);
+  }, []);
+
+  const today = clock.toLocaleDateString(undefined, {
     weekday: 'long', day: 'numeric', month: 'long',
   });
+  // Deliberately the app's own clockTime rather than a locale time format:
+  // every other time in Seli — tile subtitles, log entries — is rendered by it,
+  // and a header reading "4:43 PM" above tiles reading "16:43" would be worse
+  // than either format on its own.
+  const time = clockTime(clock.getTime());
 
   const refresh = async () => {
     setSpinning(true);
@@ -72,7 +94,9 @@ export default function Header({ theme, status, onRefresh, onToggleTheme, push }
           <h1 style={{
             margin: 0, fontSize: 26, fontWeight: 700, letterSpacing: '-0.02em', color: theme.ink,
           }}>Seli</h1>
-          <Muted theme={theme} style={{ marginTop: 2 }}>{today}</Muted>
+          <Muted theme={theme} style={{ marginTop: 2 }}>
+            {today} · <span style={{ fontVariantNumeric: 'tabular-nums' }}>{time}</span>
+          </Muted>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
