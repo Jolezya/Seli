@@ -108,7 +108,7 @@ Supabase.
 
 ### One table
 
-Every action — a feed, a nappy, a nap, a weigh-in, a note, a task — is one row
+Every action — a feed, a diaper, a nap, a weigh-in, a note, a task — is one row
 in `events`. There are no other tables (except the optional `push_subs`). This
 radical simplicity is deliberate.
 
