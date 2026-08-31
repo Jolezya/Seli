@@ -1,9 +1,9 @@
 {
-  "name": "checkin",
+  "name": "seli",
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "ChEckIn — a local-first baby tracking PWA",
+  "description": "Seli — a local-first baby tracking PWA",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

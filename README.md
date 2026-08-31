@@ -1,4 +1,4 @@
-# ChEckIn
+# Seli
 
 A baby-tracking Progressive Web App for two parents and one newborn. One screen,
 big tappable tiles, works offline, syncs between phones.

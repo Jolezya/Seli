@@ -71,7 +71,7 @@ export default function Header({ theme, status, onRefresh, onToggleTheme, push }
         <div style={{ minWidth: 0 }}>
           <h1 style={{
             margin: 0, fontSize: 26, fontWeight: 700, letterSpacing: '-0.02em', color: theme.ink,
-          }}>ChEckIn</h1>
+          }}>Seli</h1>
           <Muted theme={theme} style={{ marginTop: 2 }}>{today}</Muted>
         </div>
 

@@ -281,7 +281,7 @@ function DataButtons({ theme, store }) {
     try {
       const result = store.restore(JSON.parse(await readFile(file)));
       store.showToast(result.ok
-        ? `Restored ${result.total} entries (${result.added} new)`
+        ? `Restored ${result.total} ${result.total === 1 ? 'entry' : 'entries'} (${result.added} new)`
         : `Restore failed — ${result.error}`);
     } catch {
       store.showToast('Restore failed — that file could not be read.');
@@ -301,14 +301,14 @@ function DataButtons({ theme, store }) {
         <Button
           theme={theme}
           onClick={() => {
-            download(stamp('checkin-backup', 'json'), JSON.stringify(store.backup(), null, 2));
+            download(stamp('seli-backup', 'json'), JSON.stringify(store.backup(), null, 2));
             store.showToast('Backup downloaded ✓', null, 3000);
           }}
         >Back up data</Button>
         <Button theme={theme} onClick={() => fileInput.current?.click()}>Restore</Button>
         <Button
           theme={theme}
-          onClick={() => download(stamp('checkin-export', 'csv'), toCSV(store.backup().events), 'text/csv')}
+          onClick={() => download(stamp('seli-export', 'csv'), toCSV(store.backup().events), 'text/csv')}
         >Export CSV</Button>
         <Button theme={theme} tone="danger" onClick={() => setArmed((v) => !v)}>Clear data</Button>
         <input

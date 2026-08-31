@@ -1,10 +1,13 @@
-// ChEckIn service worker.
+// Seli service worker.
 //
 // CACHE_VERSION is stamped at build time by the Vite plugin in vite.config.js,
 // so every deploy gets a new cache name and old caches are deleted on activate.
 // Forgetting to bust this is why fixes never reached the phones in the original
 // (spec §10, §14 trap #2).
 const CACHE_VERSION = '__SW_VERSION__';
+// The cache prefix stays 'checkin-' though the app is now called Seli: the
+// activate step below deletes old caches by matching this prefix, so
+// changing it would strand every existing cache on every phone forever.
 const CACHE_NAME = `checkin-${CACHE_VERSION}`;
 const APP_SHELL = ['/', '/index.html', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png'];
 
@@ -75,7 +78,7 @@ self.addEventListener('fetch', (event) => {
 // These listeners are inert unless a push subscription exists.
 
 self.addEventListener('push', (event) => {
-  let payload = { title: 'ChEckIn', body: 'Daily reminder' };
+  let payload = { title: 'Seli', body: 'Daily reminder' };
   try {
     if (event.data) payload = { ...payload, ...event.data.json() };
   } catch {
@@ -85,7 +88,7 @@ self.addEventListener('push', (event) => {
     body: payload.body,
     icon: '/icons/icon-192.png',
     badge: '/icons/icon-192.png',
-    tag: payload.tag || 'checkin-reminder',
+    tag: payload.tag || 'seli-reminder',
     data: { url: payload.url || '/' },
   }));
 });

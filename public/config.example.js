@@ -1,7 +1,7 @@
 // OPTIONAL runtime configuration.
 //
 // Environment variables (see .env.example) are the normal way to configure
-// ChEckIn. This file is an escape hatch for changing settings on an already
+// Seli. This file is an escape hatch for changing settings on an already
 // deployed build without rebuilding: copy it to `public/config.js`, fill it in,
 // and add this line to index.html inside <head>:
 //
@@ -13,7 +13,7 @@
 // the copy sitting on your server. Never put a service_role key or a VAPID
 // private key in this file — it is served to every visitor.
 
-window.__CHECKIN_CONFIG__ = {
+window.__SELI_CONFIG__ = {
   SUPABASE_URL: '',
   SUPABASE_ANON_KEY: '',
   HOUSEHOLD: '',

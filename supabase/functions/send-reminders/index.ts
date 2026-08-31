@@ -68,9 +68,9 @@ Deno.serve(async () => {
 
     try {
       await webpush.sendNotification(sub.subscription, JSON.stringify({
-        title: 'ChEckIn',
+        title: 'Seli',
         body: '💊 Time for vitamin D',
-        tag: 'checkin-vitd',
+        tag: 'seli-vitd',
         url: '/',
       }));
       sent += 1;
@@ -94,7 +94,7 @@ Deno.serve(async () => {
 -- Schedule it hourly (run once in the SQL editor, after deploying):
 --
 -- select cron.schedule(
---   'checkin-daily-reminder',
+--   'seli-daily-reminder',
 --   '0 * * * *',
 --   $$
 --   select net.http_post(
