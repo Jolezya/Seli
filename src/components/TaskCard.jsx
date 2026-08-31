@@ -30,10 +30,12 @@ export default function TaskCard({ theme, events, store, now }) {
   const doneCount = [vitd, massage, exercise].filter(Boolean).length + (tummyDone ? 1 : 0);
   const allDone = doneCount === 4;
 
-  // Gentle escalation: the header warms up as the day goes on and tasks remain.
+  // Gentle escalation: the header warms to amber once the day is half gone and
+  // tasks remain. It deliberately stops there — a red alarm on a newborn's
+  // evening nags rather than helps, and these are gentle daily habits, not
+  // deadlines.
   const hour = new Date(now).getHours();
   const headerColor = allDone ? theme.good
-    : hour >= 18 ? theme.bad
     : hour >= 12 ? theme.warn
     : theme.inkSoft;
 
@@ -84,7 +86,16 @@ export default function TaskCard({ theme, events, store, now }) {
         </TaskRow>
 
         {/* 2. Tummy time — the one task measured in minutes, not a checkbox. */}
-        <TaskRow theme={theme} emoji="🤸" label="Tummy time" category="tummy" done={tummyDone}>
+        <TaskRow
+          theme={theme}
+          emoji="🤸"
+          label="Tummy time"
+          category="tummy"
+          done={tummyDone}
+          // An empty track under an untouched task looks like a rendering
+          // artifact, so the bar appears only once there is progress in it.
+          below={tummyMin > 0 ? <Progress theme={theme} value={tummyMin} goal={goal} category="tummy" /> : null}
+        >
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <Chip
               theme={theme}
@@ -102,7 +113,6 @@ export default function TaskCard({ theme, events, store, now }) {
               style={{ padding: '6px 12px' }}
             >{tummyOpen ? 'Going…' : 'Start'}</Button>
           </div>
-          <Progress theme={theme} value={tummyMin} goal={goal} category="tummy" />
         </TaskRow>
 
         {/* 3 + 4. One-tap tasks. */}
@@ -122,20 +132,21 @@ export default function TaskCard({ theme, events, store, now }) {
   );
 }
 
-function TaskRow({ theme, emoji, label, done, children }) {
+function TaskRow({ theme, emoji, label, done, children, below }) {
   return (
-    <div style={{
-      display: 'flex', alignItems: 'center', gap: 10,
-      opacity: done ? 0.75 : 1, flexWrap: 'wrap',
-    }}>
-      <Emoji char={emoji} size={18} />
-      <span style={{
-        fontSize: 13.5, color: theme.ink, flex: 1, minWidth: 110,
-        textDecoration: done ? 'none' : 'none', fontWeight: 500,
-      }}>{label}</span>
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
-        {children}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, opacity: done ? 0.75 : 1 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <Emoji char={emoji} size={18} />
+        <span style={{
+          fontSize: 13.5, color: theme.ink, flex: 1, minWidth: 110, fontWeight: 500,
+        }}>{label}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          {children}
+        </div>
       </div>
+      {/* Full-width, so it reads as this row's progress rather than a stray
+          mark floating under the buttons. */}
+      {below}
     </div>
   );
 }
@@ -152,7 +163,7 @@ function Progress({ theme, value, goal, category }) {
   const pct = Math.min(100, goal > 0 ? (value / goal) * 100 : 0);
   return (
     <div style={{
-      width: 110, height: 5, borderRadius: 999,
+      width: '100%', height: 5, borderRadius: 999,
       background: categoryTint(theme, category, 0.18), overflow: 'hidden',
     }}>
       <div style={{

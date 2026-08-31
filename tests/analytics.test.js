@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   feedRhythm, patternSummary, predictNext, metricSeries, metricByKey,
-  coefficientOfVariation, gapsBetween, hourlyHistogram,
+  coefficientOfVariation, gapsBetween, hourlyHistogram, diaperWatch,
 } from '../src/lib/analytics.js';
 import { FEED_TYPES } from '../src/lib/events.js';
 import { HOUR, DAY } from '../src/lib/time.js';
@@ -161,5 +161,30 @@ describe('a just-logged event is never invisible to analytics', () => {
 
   it('counts it in the tile prediction', () => {
     expect(predictNext(events, FEED_TYPES, staleNow)).toBe(NOW + 3 * HOUR);
+  });
+});
+
+describe('diaper watch note', () => {
+  const day = (offset, type) => ({
+    id: `d${n++}`, household: 'h', type,
+    start_ts: new Date(2026, 7, 30 + offset, 10, 0).getTime(),
+    end_ts: null, amount: null, side: null, descr: null,
+  });
+  const today = new Date(2026, 7, 31, 12, 0).getTime();
+
+  it('uses the same word as the tiles, singular and plural', () => {
+    const one = diaperWatch([day(0, 'wet')], today);
+    expect(one).toContain('1 wet diaper ');
+    expect(one).not.toMatch(/nappy|nappies/);
+
+    const few = diaperWatch([day(0, 'wet'), day(0, 'wet')], today);
+    expect(few).toContain('2 wet diapers');
+  });
+
+  it('stays silent when yesterday had plenty, or nothing at all', () => {
+    const plenty = Array.from({ length: 6 }, () => day(0, 'wet'));
+    expect(diaperWatch(plenty, today)).toBe(null);
+    // Nothing logged yesterday is not evidence of a problem — silence, not alarm.
+    expect(diaperWatch([], today)).toBe(null);
   });
 });

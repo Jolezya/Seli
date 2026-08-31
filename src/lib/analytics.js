@@ -248,7 +248,9 @@ export function diaperWatch(events, now = Date.now()) {
   const anyYesterday = eventsOnDay(events, yesterday).length;
   if (!anyYesterday) return null; // nothing logged — silence, not alarm
   if (wet >= 5) return null;
-  return `Only ${wet} wet ${wet === 1 ? 'nappy' : 'nappies'} logged yesterday — worth keeping an eye on.`;
+  // "diapers", to match the tile labels — the app must not switch dialect
+  // between its buttons and its advice.
+  return `Only ${wet} wet ${wet === 1 ? 'diaper' : 'diapers'} logged yesterday — worth keeping an eye on.`;
 }
 
 export { DAY, HOUR, MINUTE };
