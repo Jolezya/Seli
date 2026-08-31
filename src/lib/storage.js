@@ -2,6 +2,10 @@
 // unavailable store (private mode, quota, a half-written value) must degrade to
 // a default, never throw and take the app down with it.
 
+// Deliberately still 'checkin.', even though the app is now called Seli.
+// These keys address data already sitting on each phone — including the
+// un-synced outbound queue. Renaming them would point every device at an
+// empty store and abandon anything logged offline but not yet sent.
 const PREFIX = 'checkin.';
 
 export const KEYS = {

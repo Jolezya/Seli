@@ -180,7 +180,7 @@ function PulseDot({ color }) {
   return (
     <span style={{
       width: 10, height: 10, borderRadius: 999, background: color,
-      boxShadow: `0 0 10px ${color}`, animation: 'checkin-pulse 1.8s ease-in-out infinite',
+      boxShadow: `0 0 10px ${color}`, animation: 'seli-pulse 1.8s ease-in-out infinite',
       flex: '0 0 auto', marginTop: 4,
     }} />
   );

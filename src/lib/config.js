@@ -8,7 +8,10 @@
 // real secrets are the VAPID private key and any service_role key — those never
 // leave Supabase and must never enter this repo.
 
-const runtime = (typeof window !== 'undefined' && window.__CHECKIN_CONFIG__) || {};
+// __CHECKIN_CONFIG__ is still accepted so a config.js written before the
+// rename keeps working.
+const runtime = (typeof window !== 'undefined'
+  && (window.__SELI_CONFIG__ || window.__CHECKIN_CONFIG__)) || {};
 const env = import.meta.env || {};
 
 function pick(key, fallback = '') {
@@ -22,6 +25,9 @@ export const SUPABASE_ANON_KEY = pick('SUPABASE_ANON_KEY');
 // HOUSEHOLD is the shared private phrase that groups this family's rows. BOTH
 // phones must set it IDENTICALLY or they silently won't see each other's data —
 // a mismatch is the top debugging suspect for "the other phone isn't showing up".
+// The fallback keeps its original value on purpose: any rows written before
+// a real HOUSEHOLD was configured are grouped under it, and changing it now
+// would orphan them.
 export const HOUSEHOLD = pick('HOUSEHOLD', 'checkin-default-household');
 
 export const VAPID_PUBLIC_KEY = pick('VAPID_PUBLIC_KEY');

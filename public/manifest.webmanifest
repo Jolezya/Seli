@@ -1,6 +1,6 @@
 {
-  "name": "ChEckIn",
-  "short_name": "ChEckIn",
+  "name": "Seli",
+  "short_name": "Seli",
   "description": "Track a newborn's feeds, sleep, diapers and weight.",
   "start_url": "/",
   "scope": "/",

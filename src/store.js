@@ -211,7 +211,7 @@ export function useStore() {
 
   /** Back up: the entire local event list as a portable JSON document. */
   const backup = useCallback(() => ({
-    app: 'ChEckIn',
+    app: 'Seli',
     version: 1,
     exported_at: new Date().toISOString(),
     household: HOUSEHOLD,
@@ -222,7 +222,7 @@ export function useStore() {
   /** Restore: merge rows in by id, so re-importing the same file is a no-op. */
   const restore = useCallback((payload) => {
     const incoming = Array.isArray(payload) ? payload : payload?.events;
-    if (!Array.isArray(incoming)) return { ok: false, added: 0, error: 'That file is not a ChEckIn backup.' };
+    if (!Array.isArray(incoming)) return { ok: false, added: 0, error: 'That file is not a Seli backup.' };
     const rows = incoming.filter(isValidEvent).map((r) => toRow({ ...r, household: r.household || HOUSEHOLD }));
     if (!rows.length) return { ok: false, added: 0, error: 'No valid entries found in that file.' };
 
