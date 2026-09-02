@@ -10,6 +10,7 @@ import ComparisonChart from './components/ComparisonChart.jsx';
 import PatternsCard from './components/PatternsCard.jsx';
 import DayLog from './components/DayLog.jsx';
 import Toast from './components/Toast.jsx';
+import { ErrorBanner, installErrorReporter } from './components/ErrorReport.jsx';
 import { PUSH_AVAILABLE, currentSubscription, subscribe, unsubscribe } from './lib/push.js';
 
 /** Types a home-screen shortcut may log via ?log= (spec §10). */
@@ -19,7 +20,19 @@ export default function App() {
   const store = useStore();
   const [now, setNow] = useState(() => Date.now());
   const [pushEnabled, setPushEnabled] = useState(false);
+  const [problems, setProblems] = useState([]);
   const shortcutHandled = useRef(false);
+
+  // Anything that throws goes on the screen. An error inside an event handler
+  // is invisible otherwise — the app keeps rendering and simply stops
+  // responding, which is indistinguishable from a frozen screenshot.
+  useEffect(() => installErrorReporter((message) => {
+    setProblems((current) => {
+      const seen = current.find((p) => p.message === message);
+      if (seen) return current.map((p) => (p === seen ? { ...p, count: p.count + 1 } : p));
+      return [...current, { message, count: 1 }].slice(-3);
+    });
+  }), []);
 
   // One ticking clock for the whole app: "2h 5m ago" has to keep moving.
   useEffect(() => {
@@ -107,6 +120,7 @@ export default function App() {
         <DayLog theme={theme} events={store.events} store={store} now={now} />
       </main>
 
+      <ErrorBanner problems={problems} onDismiss={() => setProblems([])} />
       <Toast theme={theme} toast={store.toast} onDismiss={store.dismissToast} />
     </div>
   );
