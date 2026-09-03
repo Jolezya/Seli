@@ -6,7 +6,7 @@ import Header from './components/Header.jsx';
 import TaskCard from './components/TaskCard.jsx';
 import Tiles from './components/Tiles.jsx';
 import WeightCard from './components/WeightCard.jsx';
-import ComparisonChart from './components/ComparisonChart.jsx';
+import Overview from './components/Overview.jsx';
 import PatternsCard from './components/PatternsCard.jsx';
 import DayLog from './components/DayLog.jsx';
 import Toast from './components/Toast.jsx';
@@ -115,7 +115,7 @@ export default function App() {
         <TaskCard theme={theme} events={store.events} store={store} now={now} />
         <Tiles theme={theme} events={store.events} store={store} now={now} />
         <WeightCard theme={theme} events={store.events} store={store} now={now} />
-        <ComparisonChart theme={theme} events={store.events} store={store} now={now} />
+        <Overview theme={theme} events={store.events} store={store} now={now} />
         <PatternsCard theme={theme} events={store.events} now={now} />
         <DayLog theme={theme} events={store.events} store={store} now={now} />
       </main>
