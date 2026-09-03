@@ -9,7 +9,7 @@ const CATEGORY = {
   nap:      { day: '#5B6ACD', night: '#9AA4F7' },
   tummy:    { day: '#C0398A', night: '#F27BC0' },
   wet:      { day: '#1D8FA8', night: '#54D0E8' },
-  poop:     { day: '#8A5A34', night: '#C79366' },
+  poop:     { day: '#94522A', night: '#D08E58' },
   vitd:     { day: '#2C6FD1', night: '#77AEF9' },
   weight:   { day: '#7A46C4', night: '#B58BF0' },
   expected: { day: '#0E8C8C', night: '#4FD4D4' },

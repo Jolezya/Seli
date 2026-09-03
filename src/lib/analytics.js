@@ -254,3 +254,162 @@ export function diaperWatch(events, now = Date.now()) {
 }
 
 export { DAY, HOUR, MINUTE };
+
+
+// ---------------------------------------------------------------------------
+// Overview: "what happened in the last day, and is that normal?"
+//
+// Everything below works on a rolling window ending now, not on "today". At
+// 3am "today" holds three hours of data and answers nothing; the last 24 hours
+// is a full picture at any hour, and it compares fairly against whole-day
+// averages because both are 24 hours long.
+// ---------------------------------------------------------------------------
+
+/** Milliseconds of a timed event that fall inside [from, to). Open sessions run to `now`. */
+export function overlapMs(event, from, to, now = Date.now()) {
+  const start = event.start_ts;
+  const end = event.end_ts ?? now;
+  return Math.max(0, Math.min(end, to) - Math.max(start, from));
+}
+
+const SLEEP_TYPES = ['nap', 'night'];
+
+/** Totals for an arbitrary window [from, to). */
+export function windowTotals(events, from, to, now = Date.now()) {
+  const t = { feeds: 0, nurse: 0, bottle: 0, bottleMl: 0, sleepMin: 0, nightMin: 0, napMin: 0, wet: 0, poop: 0, tummyMin: 0, any: false };
+  for (const e of events) {
+    const inside = e.start_ts >= from && e.start_ts < to;
+    if (inside) {
+      t.any = true;
+      if (e.type === 'nurse') { t.feeds += 1; t.nurse += 1; }
+      else if (e.type === 'bottle') { t.feeds += 1; t.bottle += 1; t.bottleMl += Number(e.amount) || 0; }
+      else if (e.type === 'wet') t.wet += 1;
+      else if (e.type === 'poop') t.poop += 1;
+    }
+    // Timed events are clipped to the window rather than assigned by start,
+    // so a night sleep from 22:00 to 06:00 lands in both days it touches.
+    if (SLEEP_TYPES.includes(e.type) || e.type === 'tummy') {
+      const ms = overlapMs(e, from, to, now);
+      if (ms > 0) {
+        t.any = true;
+        const min = ms / MINUTE;
+        if (e.type === 'night') { t.nightMin += min; t.sleepMin += min; }
+        else if (e.type === 'nap') { t.napMin += min; t.sleepMin += min; }
+        else t.tummyMin += min;
+      }
+    }
+  }
+  return t;
+}
+
+/** Local day-start of the earliest event, or null when nothing is logged. */
+export function firstTrackedDay(events) {
+  let min = Infinity;
+  for (const e of events) if (e.start_ts < min) min = e.start_ts;
+  return Number.isFinite(min) ? startOfLocalDay(min) : null;
+}
+
+/**
+ * One row per local day, oldest first, ending today. `tracked` marks days on
+ * or after the first logged event — days before that are not "zero feeds",
+ * they are "not yet using the app", and must not drag averages down.
+ */
+export function dailyTotals(events, days, now = Date.now()) {
+  const first = firstTrackedDay(events);
+  return lastNDays(days, now).map((dayTs) => {
+    const end = addDays(dayTs, 1);
+    return {
+      dayTs,
+      key: dayKey(dayTs),
+      tracked: first != null && dayTs >= first,
+      isToday: dayKey(dayTs) === dayKey(now),
+      ...windowTotals(events, dayTs, end, now),
+    };
+  });
+}
+
+/** How many full tracked days a baseline needs before it is worth showing. */
+export const BASELINE_MIN_DAYS = 3;
+
+/**
+ * "Usually": per-day averages over full tracked days, today excluded because it
+ * is partial. Returns null until there are enough days to mean anything.
+ */
+export function baseline(rows) {
+  const full = rows.filter((r) => r.tracked && !r.isToday);
+  if (full.length < BASELINE_MIN_DAYS) return { days: full.length, ready: false };
+  const avg = (key) => full.reduce((s, r) => s + r[key], 0) / full.length;
+  return {
+    days: full.length,
+    ready: true,
+    feeds: avg('feeds'),
+    bottleMl: avg('bottleMl'),
+    sleepMin: avg('sleepMin'),
+    wet: avg('wet'),
+    poop: avg('poop'),
+    tummyMin: avg('tummyMin'),
+  };
+}
+
+/** Everything drawn on the 24-hour strip, clipped to [from, to). */
+export function timelineData(events, from, to, now = Date.now()) {
+  const sleeps = [];
+  const feeds = [];
+  const diapers = [];
+  for (const e of events) {
+    if (SLEEP_TYPES.includes(e.type)) {
+      const start = Math.max(e.start_ts, from);
+      const end = Math.min(e.end_ts ?? now, to);
+      if (end > start) sleeps.push({ id: e.id, start, end, type: e.type, open: e.end_ts == null });
+    } else if (e.start_ts >= from && e.start_ts < to) {
+      if (FEED_TYPES.includes(e.type)) feeds.push({ id: e.id, ts: e.start_ts, type: e.type, amount: e.amount });
+      else if (e.type === 'wet' || e.type === 'poop') diapers.push({ id: e.id, ts: e.start_ts, type: e.type });
+    }
+  }
+  sleeps.sort((a, b) => a.start - b.start);
+  feeds.sort((a, b) => a.ts - b.ts);
+  diapers.sort((a, b) => a.ts - b.ts);
+  return { sleeps, feeds, diapers };
+}
+
+/** The longest single sleep inside a window, clipped to it. */
+export function longestSleep(events, from, to, now = Date.now()) {
+  let best = null;
+  for (const s of timelineData(events, from, to, now).sleeps) {
+    const ms = s.end - s.start;
+    if (!best || ms > best.ms) best = { start: s.start, end: s.end, ms, open: s.open };
+  }
+  return best;
+}
+
+/** Typical gap between feeds inside a window: median, needs at least 3 feeds. */
+export function feedGapInWindow(events, from, to) {
+  const feeds = inWindow(events, FEED_TYPES, from, to);
+  const gaps = gapsBetween(feeds);
+  if (gaps.length < 2) return null;
+  return median(gaps);
+}
+
+/**
+ * This week against last, per metric — only when last week is genuinely
+ * populated. Same suppression rule as the pattern summaries: no trend is
+ * ever invented from an empty prior window.
+ */
+export function weekOverWeek(events, now = Date.now()) {
+  // 15 rows: seven full days before today, the seven before those, and today
+  // itself — which is partial and therefore excluded from both.
+  const rows = dailyTotals(events, 15, now);
+  const prior = rows.slice(0, 7).filter((r) => r.tracked);
+  const recent = rows.slice(7, 14).filter((r) => r.tracked);
+  if (prior.length < 4 || recent.length < 3) return null;
+  const avg = (list, key) => list.reduce((s, r) => s + r[key], 0) / list.length;
+  const metric = (key) => ({ now: avg(recent, key), before: avg(prior, key), delta: avg(recent, key) - avg(prior, key) });
+  return {
+    priorDays: prior.length,
+    recentDays: recent.length,
+    feeds: metric('feeds'),
+    sleepMin: metric('sleepMin'),
+    wet: metric('wet'),
+    poop: metric('poop'),
+  };
+}
