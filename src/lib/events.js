@@ -193,3 +193,16 @@ export function groupByDay(events) {
 }
 
 export { localHour, startOfLocalDay };
+
+/**
+ * Entries matching a clear-data filter: any of `types` (null = every type)
+ * that STARTED inside [from, to). Counting and deleting must use this same
+ * predicate, so the number on the button is exactly what goes.
+ */
+export function matchEvents(events, { types = null, from = null, to = null } = {}) {
+  return events.filter((e) => (
+    (!types || types.includes(e.type)) &&
+    (from == null || e.start_ts >= from) &&
+    (to == null || e.start_ts < to)
+  ));
+}

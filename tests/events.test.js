@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   mergeById, reconcile, removeById, sortEvents, totalDurationOnDay,
-  openSession, durationOf, eventsOnDay, isValidEvent,
+  openSession, durationOf, eventsOnDay, isValidEvent, matchEvents,
 } from '../src/lib/events.js';
 
 const ev = (id, over = {}) => ({
@@ -108,5 +108,29 @@ describe('sessions and durations', () => {
   it('validates rows', () => {
     expect(isValidEvent(ev('a'))).toBe(true);
     expect(isValidEvent({ id: 'a', type: 'wet' })).toBe(false);
+  });
+});
+
+describe('matchEvents — the clear-data predicate', () => {
+  const at = (d, h) => new Date(2026, 8, d, h).getTime();
+  const rows = [
+    ev('n1', { type: 'nap',   start_ts: at(1, 10) }),
+    ev('n2', { type: 'nap',   start_ts: at(3, 14) }),
+    ev('s1', { type: 'night', start_ts: at(2, 22) }),
+    ev('t1', { type: 'tummy', start_ts: at(3, 11) }),
+    ev('w1', { type: 'wet',   start_ts: at(3, 9) }),
+  ];
+  it('filters by any of several types', () => {
+    expect(matchEvents(rows, { types: ['nap', 'tummy'] }).map((e) => e.id).sort()).toEqual(['n1', 'n2', 't1']);
+  });
+  it('filters by a start-time range, from inclusive and to exclusive', () => {
+    const hit = matchEvents(rows, { from: at(3, 0), to: at(3, 12) });
+    expect(hit.map((e) => e.id).sort()).toEqual(['t1', 'w1']);
+    expect(matchEvents(rows, { from: at(3, 11), to: at(3, 11) })).toHaveLength(0);
+  });
+  it('combines type and range, and matches everything with no filter', () => {
+    expect(matchEvents(rows, { types: ['nap'], from: at(2, 0) }).map((e) => e.id)).toEqual(['n2']);
+    expect(matchEvents(rows, {})).toHaveLength(5);
+    expect(matchEvents(rows)).toHaveLength(5);
   });
 });

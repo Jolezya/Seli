@@ -6,9 +6,9 @@ import { Card, CardTitle, Chip, Button, Muted, Emoji, Divider, haptic } from '..
 import { categoryColor } from '../theme.js';
 import {
   dayLabel, clockTime, addDays, startOfLocalDay, formatDuration,
-  toDatetimeLocal, fromDatetimeLocal, MINUTE,
+  toDatetimeLocal, fromDatetimeLocal, MINUTE, DAY,
 } from '../lib/time.js';
-import { eventsOnDay, isTimedType, durationOf, ALL_TYPES } from '../lib/events.js';
+import { eventsOnDay, isTimedType, durationOf, ALL_TYPES, matchEvents } from '../lib/events.js';
 import { toCSV, download, stamp, readFile } from '../lib/files.js';
 
 const LABELS = {
@@ -112,7 +112,7 @@ export default function DayLog({ theme, events, store, now }) {
       )}
 
       <Divider theme={theme} />
-      <DataButtons theme={theme} store={store} />
+      <DataButtons theme={theme} store={store} events={events} now={now} />
     </Card>
   );
 }
@@ -272,10 +272,74 @@ function EditDialog({ theme, event, store, onClose }) {
 }
 
 /** Back up / Restore / Clear / Export. Clearing is armed, scoped and undoable. */
-function DataButtons({ theme, store }) {
+/** What can be cleared, in the order it appears. Feeds fold both kinds together. */
+const CLEAR_GROUPS = [
+  { key: 'feeds',    label: 'Feeds',       types: ['nurse', 'bottle'] },
+  { key: 'night',    label: 'Night sleep', types: ['night'] },
+  { key: 'nap',      label: 'Naps',        types: ['nap'] },
+  { key: 'tummy',    label: 'Tummy time',  types: ['tummy'] },
+  { key: 'wet',      label: 'Wet',         types: ['wet'] },
+  { key: 'poop',     label: 'Poop',        types: ['poop'] },
+  { key: 'bath',     label: 'Baths',       types: ['bath'] },
+  { key: 'weight',   label: 'Weigh-ins',   types: ['weight'] },
+  { key: 'vitd',     label: 'Vitamin D',   types: ['vitd'] },
+  { key: 'massage',  label: 'Massage',     types: ['massage'] },
+  { key: 'exercise', label: 'Exercise',    types: ['exercise'] },
+  { key: 'note',     label: 'Notes',       types: ['note'] },
+];
+
+const WHEN = [
+  { key: 'all',    label: 'All time' },
+  { key: 'today',  label: 'Today' },
+  { key: 'old30',  label: 'Older than 30 days' },
+  { key: 'custom', label: 'Choose dates…' },
+];
+
+/**
+ * Back up / Restore / Clear / Export. Clearing asks two questions — what, and
+ * when — and the delete button always says exactly how many entries match,
+ * so the number is never a surprise. Every deletion is still undoable from
+ * the toast.
+ */
+function DataButtons({ theme, store, events, now }) {
   const fileInput = useRef(null);
   const [armed, setArmed] = useState(false);
-  const [scope, setScope] = useState('all');
+  const [selected, setSelected] = useState(() => new Set(CLEAR_GROUPS.map((g) => g.key)));
+  const [when, setWhen] = useState('all');
+  const [from, setFrom] = useState(() => toDatetimeLocal(startOfLocalDay(now)));
+  const [to, setTo] = useState(() => toDatetimeLocal(now));
+
+  // How many of each kind exist at all — chips with nothing behind them are
+  // shown disabled rather than hidden, so the list is stable.
+  const counts = useMemo(() => {
+    const byType = {};
+    for (const e of events) byType[e.type] = (byType[e.type] || 0) + 1;
+    return Object.fromEntries(CLEAR_GROUPS.map((g) => [g.key, g.types.reduce((n, t) => n + (byType[t] || 0), 0)]));
+  }, [events]);
+
+  const filter = useMemo(() => {
+    const types = CLEAR_GROUPS.filter((g) => selected.has(g.key)).flatMap((g) => g.types);
+    let range = {};
+    if (when === 'today') range = { from: startOfLocalDay(now) };
+    else if (when === 'old30') range = { to: now - 30 * DAY };
+    else if (when === 'custom') {
+      const f = fromDatetimeLocal(from);
+      const t = fromDatetimeLocal(to);
+      // "to" is a minute the user chose, so include that whole minute.
+      range = { from: f ?? null, to: t == null ? null : t + MINUTE };
+    }
+    return { types, ...range };
+  }, [selected, when, from, to, now]);
+
+  const matching = useMemo(() => matchEvents(events, filter).length, [events, filter]);
+
+  const toggle = (key) => setSelected((cur) => {
+    const next = new Set(cur);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    return next;
+  });
+  const allKeys = CLEAR_GROUPS.map((g) => g.key);
+  const everything = selected.size === allKeys.length;
 
   const doRestore = async (file) => {
     if (!file) return;
@@ -290,10 +354,16 @@ function DataButtons({ theme, store }) {
   };
 
   const clear = () => {
-    const before = scope === 'old' ? Date.now() - 30 * 24 * 60 * 60 * 1000 : null;
-    const count = store.clearData({ before });
+    const count = store.clearData(filter);
     if (!count) store.showToast('Nothing matched — nothing was deleted.');
     setArmed(false);
+  };
+
+  // No `flex` here: the input sits in a column-direction label, where a
+  // flex-basis would become its height.
+  const field = {
+    border: `1px solid ${theme.line}`, background: theme.bg, color: theme.ink,
+    borderRadius: 10, padding: '8px 10px', fontSize: 13, minWidth: 0, width: '100%',
   };
 
   return (
@@ -322,19 +392,55 @@ function DataButtons({ theme, store }) {
       </div>
 
       {armed && (
-        <div style={{
-          marginTop: 10, padding: 12, borderRadius: 12, border: `1px solid ${theme.bad}`,
-        }}>
-          <div style={{ fontSize: 12.5, color: theme.bad, fontWeight: 600, marginBottom: 8 }}>
+        <div style={{ marginTop: 10, padding: 12, borderRadius: 12, border: `1px solid ${theme.bad}` }}>
+          <div style={{ fontSize: 12.5, color: theme.bad, fontWeight: 600, marginBottom: 10 }}>
             This deletes entries on every synced device. It can be undone from the toast.
           </div>
-          <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
-            <Chip theme={theme} active={scope === 'all'} onClick={() => setScope('all')}>Everything</Chip>
-            <Chip theme={theme} active={scope === 'old'} onClick={() => setScope('old')}>Older than 30 days</Chip>
+
+          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
+            <Muted theme={theme} size={11} style={{ fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>What</Muted>
+            <button
+              type="button"
+              onClick={() => setSelected(new Set(everything ? [] : allKeys))}
+              style={{ appearance: 'none', border: 'none', background: 'transparent', color: theme.inkSoft, fontSize: 11.5, cursor: 'pointer', padding: 0 }}
+            >{everything ? 'Select none' : 'Select all'}</button>
           </div>
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
+            {CLEAR_GROUPS.map((g) => (
+              <Chip
+                key={g.key}
+                theme={theme}
+                active={selected.has(g.key) && counts[g.key] > 0}
+                onClick={() => counts[g.key] > 0 && toggle(g.key)}
+                style={counts[g.key] === 0 ? { opacity: 0.4, cursor: 'default' } : null}
+              >{g.label} · {counts[g.key]}</Chip>
+            ))}
+          </div>
+
+          <Muted theme={theme} size={11} style={{ fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', marginTop: 12 }}>When</Muted>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
+            {WHEN.map((w) => (
+              <Chip key={w.key} theme={theme} active={when === w.key} onClick={() => setWhen(w.key)}>{w.label}</Chip>
+            ))}
+          </div>
+          {when === 'custom' && (
+            <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 3, flex: '1 1 150px', fontSize: 11, color: theme.inkSoft }}>
+                From
+                <input type="datetime-local" value={from} onChange={(e) => setFrom(e.target.value)} style={field} />
+              </label>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 3, flex: '1 1 150px', fontSize: 11, color: theme.inkSoft }}>
+                To
+                <input type="datetime-local" value={to} onChange={(e) => setTo(e.target.value)} style={field} />
+              </label>
+            </div>
+          )}
+
+          <div style={{ display: 'flex', gap: 8, marginTop: 12, alignItems: 'center' }}>
             <Button theme={theme} onClick={() => setArmed(false)}>Cancel</Button>
-            <Button theme={theme} tone="danger" onClick={clear}>Yes, delete</Button>
+            <Button theme={theme} tone="danger" onClick={clear} disabled={matching === 0}>
+              {matching === 0 ? 'Nothing matches' : `Delete ${matching} ${matching === 1 ? 'entry' : 'entries'}`}
+            </Button>
           </div>
         </div>
       )}
