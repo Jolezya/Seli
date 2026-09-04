@@ -12,6 +12,32 @@ export const TIMED_TYPES = ['nap', 'night', 'tummy'];
 /** Types that count as a feed. */
 export const FEED_TYPES = ['nurse', 'bottle'];
 
+/** The two kinds of sleep. One tile logs both; the clock decides which. */
+export const SLEEP_TYPES = ['night', 'nap'];
+
+/**
+ * Night or nap, by the local time a sleep STARTS.
+ *   21:00 – 06:00  → night
+ *   06:01 – 20:59  → nap
+ * The household set this rule explicitly; the boundaries are inclusive as
+ * written, so a sleep started at exactly 06:00 is still night.
+ */
+export function sleepTypeFor(ts) {
+  const d = new Date(ts);
+  const minutes = d.getHours() * 60 + d.getMinutes();
+  return minutes >= 21 * 60 || minutes <= 6 * 60 ? 'night' : 'nap';
+}
+
+/** The sleep session currently running, whichever kind it is. */
+export function openSleep(events) {
+  return events.find((e) => SLEEP_TYPES.includes(e.type) && e.end_ts == null) || null;
+}
+
+/** The most recent sleep of either kind (events must be newest-first). */
+export function lastSleep(events) {
+  return events.find((e) => SLEEP_TYPES.includes(e.type)) || null;
+}
+
 export const ALL_TYPES = [
   'nurse', 'bottle', 'nap', 'night', 'tummy',
   'wet', 'poop', 'vitd', 'weight', 'note', 'massage', 'exercise',

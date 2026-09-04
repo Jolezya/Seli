@@ -106,6 +106,14 @@ Supabase.
 
 ## How it works
 
+### The tiles
+
+Five of them: nursing, bottle, sleep, wet, poop. Sleep is one tile for both
+kinds — the clock decides at the moment a sleep starts (21:00–06:00 is night,
+06:01–20:59 is a nap) and the row is stored as `night` or `nap`, so the
+analytics keep the distinction. Tummy time lives in the task list, where its
+daily-minutes goal is the point.
+
 ### One table
 
 Every action — a feed, a diaper, a nap, a weigh-in, a note, a task — is one row
@@ -184,7 +192,7 @@ src/
     files.js       backup / restore / CSV export
     push.js        optional push subscription
     config.js      env vars + optional runtime override
-  components/      Header, TaskCard, Tiles, WeightCard, ComparisonChart,
+  components/      Header, TaskCard, Tiles, WeightCard, Overview,
                    PatternsCard, DayLog, Toast
   store.js         the one hook that owns events, sync and prefs
   theme.js         design tokens + automatic day/night
