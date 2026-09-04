@@ -108,12 +108,15 @@ Supabase.
 
 ### The tiles
 
-Six of them: nursing, bottle, sleep, bath, wet, poop. Sleep is one tile for both
+Six of them: nursing, weight, sleep, bath, wet, poop. Sleep is one tile for both
 kinds — the clock decides at the moment a sleep starts (21:00–06:00 is night,
 06:01–20:59 is a nap) and the row is stored as `night` or `nap`, so the
-analytics keep the distinction. Bath is the one low-frequency tile — its
-time-since number answers "when did we last bathe her?". Tummy time lives in
-the task list, where its daily-minutes goal is the point.
+analytics keep the distinction. Bath and Weight are the low-frequency tiles —
+"when did we last bathe her?" and "what did she weigh, and when?"; tapping
+Weight opens a grams entry on the tile itself. This household breastfeeds
+only, so there is no bottle tile; the `bottle` type still exists for the
+analytics and the day log. Tummy time lives in the task list, where its
+daily-minutes goal is the point.
 
 ### One table
 

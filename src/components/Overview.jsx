@@ -288,7 +288,9 @@ function Timeline({ theme, events, from, to, now }) {
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 14px', marginTop: 4, fontSize: 11, color: theme.inkSoft }}>
         <span><Key theme={theme} category="night" shape="bar" /> Sleep</span>
         <span><Key theme={theme} category="nurse" /> Nursing</span>
-        <span><Key theme={theme} category="nurse" shape="ring" /> Bottle</span>
+        {data.feeds.some((f) => f.type === 'bottle') && (
+          <span><Key theme={theme} category="nurse" shape="ring" /> Bottle</span>
+        )}
         <span><Key theme={theme} category="wet" shape="tick" /> Wet</span>
         <span><Key theme={theme} category="poop" shape="tick" /> Poop</span>
       </div>
@@ -427,6 +429,9 @@ function WeekTrend({ theme, weekly }) {
 }
 
 function DayTable({ theme, rows, now }) {
+  // A breastfeeding-only household never has bottle volume; don't show a
+  // column of dashes for it.
+  const showMl = rows.some((r) => r.bottleMl > 0);
   const cell = { padding: '6px 5px', fontSize: 12, borderBottom: `1px solid ${theme.line}`, whiteSpace: 'nowrap' };
   const num = { ...cell, textAlign: 'right', fontVariantNumeric: 'tabular-nums' };
   const head = { ...cell, fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase', color: theme.inkFaint, fontWeight: 600 };
@@ -437,7 +442,7 @@ function DayTable({ theme, rows, now }) {
           <tr>
             <th style={{ ...head, textAlign: 'left' }}>Day</th>
             <th style={{ ...head, textAlign: 'right' }}>Feeds</th>
-            <th style={{ ...head, textAlign: 'right' }}>ml</th>
+            {showMl && <th style={{ ...head, textAlign: 'right' }}>ml</th>}
             <th style={{ ...head, textAlign: 'right' }}>Sleep</th>
             <th style={{ ...head, textAlign: 'right' }}>Wet</th>
             <th style={{ ...head, textAlign: 'right' }}>Poop</th>
@@ -448,7 +453,7 @@ function DayTable({ theme, rows, now }) {
             <tr key={r.key}>
               <td style={cell}>{dayLabel(r.dayTs, now)}</td>
               <td style={num}>{r.feeds}</td>
-              <td style={num}>{r.bottleMl || '—'}</td>
+              {showMl && <td style={num}>{r.bottleMl || '—'}</td>}
               <td style={num}>{formatValue({ unit: 'minutes' }, r.sleepMin)}</td>
               <td style={num}>{r.wet}</td>
               <td style={num}>{r.poop}</td>
