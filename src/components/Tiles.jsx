@@ -1,28 +1,29 @@
-// The tile grid: five large targets, tappable one-handed at 3am.
+// The tile grid: six equal targets, tappable one-handed at 3am.
 //
 // Two behaviours only — one-tap point events, and one timed activity, sleep,
-// which starts on the first tap and ends on the second. Sleep spans the row:
-// it is the one thing that runs for hours, and the width carries the last
-// 24 hours' total beside "since when". Tummy time lives in the task list,
-// where its daily-minutes goal is the point (spec §5, §6).
+// which starts on the first tap and ends on the second. Tummy time lives in
+// the task list, where its daily-minutes goal is the point (spec §5, §6).
 
-import React, { useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import { Pressable, IconWell, Eyebrow, haptic, surfaceStyle } from '../ui.jsx';
 import { categoryColor, categoryTint } from '../theme.js';
-import { timeAgo, clockTime, formatDuration, HOUR } from '../lib/time.js';
+import { timeAgo, clockTime, whenLabel } from '../lib/time.js';
 import { SLEEP_TYPES, openSleep, lastSleep, lastOfType } from '../lib/events.js';
-import { predictNext, windowTotals } from '../lib/analytics.js';
+import { predictNext } from '../lib/analytics.js';
 
 /**
- * Five tiles. `types` is what a tile reads; `mode` is what a tap does. Sleep
- * reads both kinds and lets the clock decide which kind a tap starts.
+ * Six tiles, 3 rows x 2. `types` is what a tile reads; `mode` is what a tap
+ * does. Sleep reads both kinds and lets the clock decide which a tap starts.
+ * Bath is the one low-frequency tile: its whole point is the time-since
+ * number, because "when did we last bathe her?" is the recurring question.
  */
 export const TILES = [
-  { key: 'nurse',  types: ['nurse'],  label: 'Nursing',      emoji: '🤱', category: 'nurse', mode: 'point',  subtitle: 'last feed',   canUpdate: true },
-  { key: 'bottle', types: ['bottle'], label: 'Bottle',       emoji: '🍼', category: 'bottle', mode: 'amount', subtitle: 'last bottle' },
-  { key: 'sleep',  types: SLEEP_TYPES, label: 'Sleep',       emoji: '😴', category: 'night', mode: 'sleep',  subtitle: 'last sleep',  canUpdate: true, wide: true },
-  { key: 'wet',    types: ['wet'],    label: 'Wet diapers',  emoji: '💧', category: 'wet',   mode: 'point',  subtitle: 'last change' },
-  { key: 'poop',   types: ['poop'],   label: 'Poop diapers', emoji: '💩', category: 'poop',  mode: 'point',  subtitle: 'last change' },
+  { key: 'nurse',  types: ['nurse'],   label: 'Nursing',      emoji: '🤱', category: 'nurse',  mode: 'point',  subtitle: 'last feed',   canUpdate: true },
+  { key: 'bottle', types: ['bottle'],  label: 'Bottle',       emoji: '🍼', category: 'bottle', mode: 'amount', subtitle: 'last bottle' },
+  { key: 'sleep',  types: SLEEP_TYPES, label: 'Sleep',        emoji: '😴', category: 'night',  mode: 'sleep',  subtitle: 'last sleep',  canUpdate: true },
+  { key: 'bath',   types: ['bath'],    label: 'Bath',         emoji: '🛁', category: 'bath',   mode: 'point',  subtitle: 'last bath' },
+  { key: 'wet',    types: ['wet'],     label: 'Wet diapers',  emoji: '💧', category: 'wet',    mode: 'point',  subtitle: 'last change' },
+  { key: 'poop',   types: ['poop'],    label: 'Poop diapers', emoji: '💩', category: 'poop',   mode: 'point',  subtitle: 'last change' },
 ];
 
 export const BOTTLE_AMOUNTS = [30, 60, 90, 120, 150];
@@ -81,7 +82,7 @@ function Tile({ tile, theme, events, store, now, chooserOpen, onOpenChooser }) {
   const subtitle = running
     ? `${KIND_LABEL[open.type]} since ${clockTime(open.start_ts)} · tap to end`
     : (reference
-      ? `${isSleep && last ? `${KIND_LABEL[last.type].toLowerCase()} ended` : tile.subtitle} ${clockTime(reference)}`
+      ? `${isSleep && last ? `${KIND_LABEL[last.type].toLowerCase()} ended` : tile.subtitle} ${whenLabel(reference, now)}`
       : 'tap to log');
 
   return (
@@ -99,7 +100,6 @@ function Tile({ tile, theme, events, store, now, chooserOpen, onOpenChooser }) {
         flexDirection: 'column',
         justifyContent: 'space-between',
         position: 'relative',
-        gridColumn: tile.wide ? '1 / -1' : 'auto',
         ...(running ? {
           background: `linear-gradient(180deg, ${categoryTint(theme, tile.category, 0.20)} 0%, ${theme.surfaceBottom} 100%)`,
           boxShadow: [
@@ -118,36 +118,31 @@ function Tile({ tile, theme, events, store, now, chooserOpen, onOpenChooser }) {
           : (tile.canUpdate && last && <UpdatePill theme={theme} accent={accent} onTap={() => store.bumpLast(tile.key)} />)}
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12, minWidth: 0 }}>
-        <div style={{ minWidth: 0, flex: 1 }}>
-          <Eyebrow theme={theme} color={running ? accent : theme.inkSoft}>{tile.label}</Eyebrow>
-          <div style={{
-            fontSize: 22,
-            fontWeight: 650,
-            letterSpacing: '-0.02em',
-            color: theme.ink,
-            fontVariantNumeric: 'tabular-nums',
-            // Room for descenders: generous line-height and a hair of padding.
-            lineHeight: 1.25,
-            padding: '2px 0 3px',
-            whiteSpace: 'nowrap',
-            textOverflow: 'ellipsis',
-            overflow: 'hidden',
-            marginTop: 3,
-          }}>{value}</div>
-          <div style={{
-            fontSize: 11.5, color: theme.inkSoft, whiteSpace: 'nowrap',
-            textOverflow: 'ellipsis', overflow: 'hidden', lineHeight: 1.35,
-          }}>{subtitle}</div>
-          {prediction && !running && (
-            <div style={{ fontSize: 11, color: theme.inkFaint, marginTop: 2 }}>
-              next ≈ {clockTime(prediction)}
-            </div>
-          )}
-        </div>
-
-        {/* The wide tile's second column: what the last day of sleep added up to. */}
-        {isSleep && <SleepSummary theme={theme} events={events} now={now} />}
+      <div style={{ minWidth: 0 }}>
+        <Eyebrow theme={theme} color={running ? accent : theme.inkSoft}>{tile.label}</Eyebrow>
+        <div style={{
+          fontSize: 22,
+          fontWeight: 650,
+          letterSpacing: '-0.02em',
+          color: theme.ink,
+          fontVariantNumeric: 'tabular-nums',
+          // Room for descenders: generous line-height and a hair of padding.
+          lineHeight: 1.25,
+          padding: '2px 0 3px',
+          whiteSpace: 'nowrap',
+          textOverflow: 'ellipsis',
+          overflow: 'hidden',
+          marginTop: 3,
+        }}>{value}</div>
+        <div style={{
+          fontSize: 11.5, color: theme.inkSoft, whiteSpace: 'nowrap',
+          textOverflow: 'ellipsis', overflow: 'hidden', lineHeight: 1.35,
+        }}>{subtitle}</div>
+        {prediction && !running && (
+          <div style={{ fontSize: 11, color: theme.inkFaint, marginTop: 2 }}>
+            next ≈ {clockTime(prediction)}
+          </div>
+        )}
       </div>
 
       {chooserOpen && tile.mode === 'amount' && (
@@ -162,29 +157,6 @@ function Tile({ tile, theme, events, store, now, chooserOpen, onOpenChooser }) {
         />
       )}
     </Pressable>
-  );
-}
-
-/** Last 24 hours of sleep, split the way the clock split it. */
-function SleepSummary({ theme, events, now }) {
-  const totals = useMemo(() => windowTotals(events, now - 24 * HOUR, now + 1, now), [events, now]);
-  const naps = useMemo(
-    () => events.filter((e) => e.type === 'nap' && e.start_ts >= now - 24 * HOUR && e.start_ts <= now).length,
-    [events, now],
-  );
-  if (!totals.sleepMin) return null;
-  return (
-    <div style={{ textAlign: 'right', flex: '0 0 auto' }}>
-      <div style={{ fontSize: 10.5, letterSpacing: '0.08em', textTransform: 'uppercase', color: theme.inkFaint, fontWeight: 700 }}>
-        last 24 h
-      </div>
-      <div style={{ fontSize: 18, fontWeight: 650, letterSpacing: '-0.02em', color: theme.ink, lineHeight: 1.25, fontVariantNumeric: 'tabular-nums' }}>
-        {formatDuration(totals.sleepMin * 60_000)}
-      </div>
-      <div style={{ fontSize: 11, color: theme.inkSoft, whiteSpace: 'nowrap' }}>
-        {naps} {naps === 1 ? 'nap' : 'naps'} · night {formatDuration(totals.nightMin * 60_000)}
-      </div>
-    </div>
   );
 }
 

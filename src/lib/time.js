@@ -144,3 +144,14 @@ export function fromDateInput(value) {
   const [, y, mo, d] = m.map(Number);
   return new Date(y, mo - 1, d, 12, 0, 0, 0).getTime();
 }
+
+/**
+ * Compact "when" for a tile subtitle: just the clock time if it was today,
+ * otherwise the weekday too — "18:40" / "Tue 18:40". A bath three days ago
+ * captioned only "18:40" tells you nothing.
+ */
+export function whenLabel(ts, now = Date.now()) {
+  if (isSameLocalDay(ts, now)) return clockTime(ts);
+  const weekday = new Date(ts).toLocaleDateString(undefined, { weekday: 'short' });
+  return `${weekday} ${clockTime(ts)}`;
+}

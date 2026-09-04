@@ -24,6 +24,7 @@ const LABELS = {
   note: { emoji: '📝', name: 'Note' },
   massage: { emoji: '💆', name: 'Massage' },
   exercise: { emoji: '🤸‍♀️', name: 'Exercise' },
+  bath: { emoji: '🛁', name: 'Bath' },
 };
 
 export default function DayLog({ theme, events, store, now }) {
