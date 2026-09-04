@@ -19,11 +19,14 @@ const CATEGORY = {
 
 const day = {
   name: 'day',
-  bg: '#F2F1F6',
-  bgTint: '#E9E8F0',
+  // Warm linen, deep enough that the white cards lift off it without relying
+  // on their shadows. The card gradient's bottom step is warmed to match, so a
+  // cool-tinted card does not sit on a warm ground.
+  bg: '#EEE9E1',
+  bgTint: '#E4DED4',
   surface: '#FFFFFF',
   surfaceTop: '#FFFFFF',
-  surfaceBottom: '#F6F5FA',
+  surfaceBottom: '#F8F6F2',
   ink: '#14131A',
   inkSoft: '#6E6B7B',
   inkFaint: '#9C99A8',
