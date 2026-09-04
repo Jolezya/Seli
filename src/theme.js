@@ -15,6 +15,7 @@ const CATEGORY = {
   expected: { day: '#0E8C8C', night: '#4FD4D4' },
   massage:  { day: '#B0543C', night: '#EF9277' },
   exercise: { day: '#3E7F6A', night: '#6FC5A6' },
+  bath:     { day: '#2E6FD6', night: '#7AAEFF' },
 };
 
 const day = {

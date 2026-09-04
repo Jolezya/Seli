@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   dayKey, isSameLocalDay, isToday, timeAgo, daysBetween, lastNDays,
-  localNoon, formatDuration, fromDatetimeLocal, toDatetimeLocal, fromDateInput,
+  localNoon, formatDuration, fromDatetimeLocal, toDatetimeLocal, fromDateInput, whenLabel,
 } from '../src/lib/time.js';
 
 describe('local-day grouping', () => {
@@ -67,5 +67,16 @@ describe('duration + input round-trips', () => {
     const ts = fromDateInput('2026-08-30');
     expect(new Date(ts).getHours()).toBe(12);
     expect(dayKey(ts)).toBe('2026-08-30');
+  });
+});
+
+describe('whenLabel', () => {
+  it('is just the clock time for today, and adds the weekday otherwise', () => {
+    const now = new Date(2026, 8, 4, 16, 0).getTime();          // Friday
+    expect(whenLabel(new Date(2026, 8, 4, 9, 5).getTime(), now)).toBe('09:05');
+    const tue = new Date(2026, 8, 1, 18, 40).getTime();
+    const label = whenLabel(tue, now);
+    expect(label.endsWith(' 18:40')).toBe(true);
+    expect(label.length).toBeGreaterThan(' 18:40'.length);      // carries a weekday
   });
 });
