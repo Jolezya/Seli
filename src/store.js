@@ -10,7 +10,7 @@ import { KEYS, readJSON, writeJSON } from './lib/storage.js';
 import {
   makeEvent, mergeById, removeById, reconcile, sortEvents, toRow,
   openSession, isTimedType, lastOfType, isValidEvent,
-  sleepTypeFor, openSleep, lastSleep,
+  sleepTypeFor, openSleep, lastSleep, matchEvents,
 } from './lib/events.js';
 import { localNoon, dayKey } from './lib/time.js';
 import { weighInOnDay, clampGain, DEFAULT_GAIN } from './lib/weight.js';
@@ -246,10 +246,8 @@ export function useStore() {
   }, [events, engine]);
 
   /** Clear data — destructive, explicit, and optionally narrowed by type/date. */
-  const clearData = useCallback(({ types = null, before = null } = {}) => {
-    const doomed = events.filter((e) => (
-      (!types || types.includes(e.type)) && (!before || e.start_ts < before)
-    ));
+  const clearData = useCallback((filter = {}) => {
+    const doomed = matchEvents(events, filter);
     if (!doomed.length) return 0;
     const ids = new Set(doomed.map((e) => e.id));
     setEvents((current) => current.filter((e) => !ids.has(e.id)));
