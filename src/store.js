@@ -10,6 +10,7 @@ import { KEYS, readJSON, writeJSON } from './lib/storage.js';
 import {
   makeEvent, mergeById, removeById, reconcile, sortEvents, toRow,
   openSession, isTimedType, lastOfType, isValidEvent,
+  sleepTypeFor, openSleep, lastSleep,
 } from './lib/events.js';
 import { localNoon, dayKey } from './lib/time.js';
 import { weighInOnDay, clampGain, DEFAULT_GAIN } from './lib/weight.js';
@@ -181,16 +182,28 @@ export function useStore() {
   }, [events, log, update]);
 
   /**
+   * Start or end a sleep. The tile does not ask which kind: the clock decides
+   * at the moment the sleep starts, and the row is stored as 'night' or 'nap'
+   * so every analytic downstream keeps working unchanged.
+   */
+  const toggleSleep = useCallback(() => {
+    const open = openSleep(events);
+    if (open) return update(open.id, { end_ts: Date.now() });
+    const now = Date.now();
+    return log(sleepTypeFor(now), { start_ts: now, end_ts: null });
+  }, [events, log, update]);
+
+  /**
    * The Update pill: move the last completed session's end (or the nurse
    * event's timestamp) to now. It MUTATES the existing row and never inserts —
    * that is the whole point of cluster-feed tracking (spec §5.2).
    */
   const bumpLast = useCallback((type) => {
-    const last = lastOfType(events, type);
+    const last = type === 'sleep' ? lastSleep(events) : lastOfType(events, type);
     if (!last) return null;
     const now = Date.now();
     if (type === 'nurse') return update(last.id, { start_ts: now, end_ts: now });
-    if (isTimedType(type) && last.end_ts != null) return update(last.id, { end_ts: now });
+    if ((type === 'sleep' || isTimedType(type)) && last.end_ts != null) return update(last.id, { end_ts: now });
     return update(last.id, { start_ts: now });
   }, [events, update]);
 
@@ -278,12 +291,12 @@ export function useStore() {
 
   return useMemo(() => ({
     events, prefs, status, toast,
-    log, logPoint, toggleSession, bumpLast, update, remove, setWeight,
+    log, logPoint, toggleSession, toggleSleep, bumpLast, update, remove, setWeight,
     backup, restore, clearData, refresh, setPrefs, showToast, dismissToast,
     configured: engine.configured,
     client: engine.client,
   }), [
-    events, prefs, status, toast, log, logPoint, toggleSession, bumpLast,
+    events, prefs, status, toast, log, logPoint, toggleSession, toggleSleep, bumpLast,
     update, remove, setWeight, backup, restore, clearData, refresh, setPrefs,
     showToast, dismissToast, engine,
   ]);
