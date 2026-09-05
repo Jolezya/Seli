@@ -347,7 +347,9 @@ function DataButtons({ theme, store, events, now }) {
       const result = store.restore(JSON.parse(await readFile(file)));
       store.showToast(result.ok
         ? `Restored ${result.total} ${result.total === 1 ? 'entry' : 'entries'} (${result.added} new)`
-        : `Restore failed — ${result.error}`);
+          + (result.source === 'ChEckIn' ? ' from ChEckIn' : '')
+          + (result.skipped ? ` · ${result.skipped} unreadable skipped` : '')
+        : `Restore failed — ${result.error}`, null, 8000);
     } catch {
       store.showToast('Restore failed — that file could not be read.');
     }
@@ -447,6 +449,7 @@ function DataButtons({ theme, store, events, now }) {
 
       <Muted theme={theme} size={11} style={{ marginTop: 10 }}>
         Synced across your devices. A local copy is kept on each phone too.
+        Restore takes a Seli backup or one from the original ChEckIn app.
       </Muted>
     </div>
   );

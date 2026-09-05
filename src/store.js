@@ -15,6 +15,7 @@ import {
 import { localNoon, dayKey } from './lib/time.js';
 import { weighInOnDay, clampGain, DEFAULT_GAIN } from './lib/weight.js';
 import { HOUSEHOLD } from './lib/config.js';
+import { normalizeBackup } from './lib/backup.js';
 
 const DEFAULT_PREFS = {
   gain: DEFAULT_GAIN,
@@ -232,17 +233,20 @@ export function useStore() {
     events,
   }), [events]);
 
-  /** Restore: merge rows in by id, so re-importing the same file is a no-op. */
+  /**
+   * Restore: merge rows in by id, so re-importing the same file is a no-op.
+   * Accepts Seli's own backups and the original ChEckIn app's, and files
+   * every row under THIS household whatever the file says (lib/backup.js).
+   */
   const restore = useCallback((payload) => {
-    const incoming = Array.isArray(payload) ? payload : payload?.events;
-    if (!Array.isArray(incoming)) return { ok: false, added: 0, error: 'That file is not a Seli backup.' };
-    const rows = incoming.filter(isValidEvent).map((r) => toRow({ ...r, household: r.household || HOUSEHOLD }));
-    if (!rows.length) return { ok: false, added: 0, error: 'No valid entries found in that file.' };
+    const parsed = normalizeBackup(payload, HOUSEHOLD);
+    if (parsed.error) return { ok: false, added: 0, error: parsed.error };
+    const { rows, skipped, source } = parsed;
 
     const known = new Set(events.map((e) => e.id));
     setEvents((current) => mergeById(current, rows));
     for (const row of rows) engine.upsert(row);
-    return { ok: true, added: rows.filter((r) => !known.has(r.id)).length, total: rows.length, error: null };
+    return { ok: true, added: rows.filter((r) => !known.has(r.id)).length, total: rows.length, skipped, source, error: null };
   }, [events, engine]);
 
   /** Clear data — destructive, explicit, and optionally narrowed by type/date. */
