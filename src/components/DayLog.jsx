@@ -48,8 +48,11 @@ export default function DayLog({ theme, events, store, now }) {
       </div>
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+        {/* A breastfeeding-only day is just "5 feeds"; the split only earns
+            its place once a bottle has actually been logged. */}
         <Stat theme={theme}>
-          {stats.feeds} {stats.feeds === 1 ? 'feed' : 'feeds'} ({stats.nurse} nursing · {stats.bottle} bottle)
+          {stats.feeds} {stats.feeds === 1 ? 'feed' : 'feeds'}
+          {stats.bottle > 0 && ` (${stats.nurse} nursing · ${stats.bottle} bottle)`}
         </Stat>
         {stats.napMin > 0 && <Stat theme={theme}>{stats.napMin}m nap time</Stat>}
         {stats.nightMin > 0 && <Stat theme={theme}>{formatDuration(stats.nightMin * MINUTE)} night sleep</Stat>}
