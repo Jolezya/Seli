@@ -7,6 +7,7 @@ import { Card, CardTitle, Chip, Button, Emoji, haptic } from '../ui.jsx';
 import { categoryColor, categoryTint } from '../theme.js';
 import { clockTime, formatDuration, MINUTE } from '../lib/time.js';
 import { eventsOnDay, openSession, totalDurationOnDay } from '../lib/events.js';
+import { msLeftInDay, leftLabel, taskTone } from '../lib/tasks.js';
 
 export const CARERS = ['Kay', 'Maren', 'Both'];
 export const TUMMY_GOALS = [10, 15, 20, 30];
@@ -30,14 +31,19 @@ export default function TaskCard({ theme, events, store, now }) {
   const doneCount = [vitd, massage, exercise].filter(Boolean).length + (tummyDone ? 1 : 0);
   const allDone = doneCount === 4;
 
-  // Gentle escalation: the header warms to amber once the day is half gone and
-  // tasks remain. It deliberately stops there — a red alarm on a newborn's
-  // evening nags rather than helps, and these are gentle daily habits, not
-  // deadlines.
-  const hour = new Date(now).getHours();
-  const headerColor = allDone ? theme.good
-    : hour >= 12 ? theme.warn
-    : theme.inkSoft;
+  // Gentle escalation, and one countdown for the whole card: every task
+  // shares the same deadline (local midnight, when the list resets), so a
+  // timer per row would show the same number four times. The header warms
+  // to amber once the day is half gone, or in the last two hours whatever
+  // the clock says. It deliberately stops there — a red alarm on a newborn's
+  // evening nags rather than helps; these are gentle daily habits, not
+  // deadlines. Whole minutes only: the card already re-renders each minute.
+  const left = msLeftInDay(now);
+  const tone = taskTone({ allDone, now });
+  const nudge = tone === 'nudge';
+  const headerColor = tone === 'done' ? theme.good
+    : tone === 'calm' ? theme.inkSoft
+    : theme.warn;
 
   if (allDone) {
     return (
@@ -53,7 +59,11 @@ export default function TaskCard({ theme, events, store, now }) {
     <Card theme={theme}>
       <CardTitle
         theme={theme}
-        right={<span style={{ fontSize: 11, fontWeight: 700, color: headerColor }}>{doneCount}/4 done</span>}
+        right={(
+          <span style={{ fontSize: 11, fontWeight: 700, color: headerColor, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
+            {doneCount}/4 done · {leftLabel(left)}
+          </span>
+        )}
       >
         <span style={{ color: headerColor }}>Today's tasks</span>
       </CardTitle>
@@ -81,7 +91,10 @@ export default function TaskCard({ theme, events, store, now }) {
               ))}
             </div>
           ) : (
-            <Button theme={theme} onClick={() => setPickingCarer(true)} style={{ padding: '6px 12px' }}>Done</Button>
+            <>
+              {nudge && <Hint theme={theme}>not yet today</Hint>}
+              <Button theme={theme} onClick={() => setPickingCarer(true)} style={{ padding: '6px 12px' }}>Done</Button>
+            </>
           )}
         </TaskRow>
 
@@ -101,9 +114,13 @@ export default function TaskCard({ theme, events, store, now }) {
           below={<Progress theme={theme} minutes={tummyMs / MINUTE} goal={goal} category="tummy" />}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            {/* The chip already says how far there is to go, so the nudge
+                here is its colour, not another word: three items would wrap
+                the row. */}
             <Chip
               theme={theme}
               accent={categoryColor(theme, 'tummy')}
+              style={nudge && !tummyDone ? { borderColor: theme.warn, color: theme.warn } : null}
               onClick={() => {
                 const next = TUMMY_GOALS[(TUMMY_GOALS.indexOf(goal) + 1) % TUMMY_GOALS.length];
                 store.setPrefs({ tummyGoal: next });
@@ -123,13 +140,23 @@ export default function TaskCard({ theme, events, store, now }) {
         <TaskRow theme={theme} emoji="💆" label="Massage" category="massage" done={Boolean(massage)}>
           {massage
             ? <Done theme={theme}>Massage done {clockTime(massage.start_ts)}</Done>
-            : <Button theme={theme} onClick={() => { haptic(); store.logPoint('massage'); }} style={{ padding: '6px 12px' }}>Done</Button>}
+            : (
+              <>
+                {nudge && <Hint theme={theme}>not yet today</Hint>}
+                <Button theme={theme} onClick={() => { haptic(); store.logPoint('massage'); }} style={{ padding: '6px 12px' }}>Done</Button>
+              </>
+            )}
         </TaskRow>
 
         <TaskRow theme={theme} emoji="🤸‍♀️" label="Exercise" category="exercise" done={Boolean(exercise)}>
           {exercise
             ? <Done theme={theme}>Exercise done {clockTime(exercise.start_ts)}</Done>
-            : <Button theme={theme} onClick={() => { haptic(); store.logPoint('exercise'); }} style={{ padding: '6px 12px' }}>Done</Button>}
+            : (
+              <>
+                {nudge && <Hint theme={theme}>not yet today</Hint>}
+                <Button theme={theme} onClick={() => { haptic(); store.logPoint('exercise'); }} style={{ padding: '6px 12px' }}>Done</Button>
+              </>
+            )}
         </TaskRow>
       </div>
     </Card>
@@ -152,6 +179,18 @@ function TaskRow({ theme, emoji, label, done, children, below }) {
           mark floating under the buttons. */}
       {below}
     </div>
+  );
+}
+
+/**
+ * The last-two-hours nudge on a row still open: amber text, no icon, no
+ * animation. It says what is left, and the button beside it is the answer.
+ */
+function Hint({ theme, children }) {
+  return (
+    <span style={{ fontSize: 11.5, color: theme.warn, fontWeight: 600, whiteSpace: 'nowrap' }}>
+      {children}
+    </span>
   );
 }
 
