@@ -17,8 +17,12 @@ import { categoryColor, categoryTint } from '../theme.js';
 import {
   dailyTotals, windowTotals, baseline, timelineData, longestSleep,
   feedGapInWindow, weekOverWeek, formatGap, BASELINE_MIN_DAYS,
+  periodRange, usualByElapsed,
 } from '../lib/analytics.js';
-import { HOUR, MINUTE, clockTime, formatDuration, dayLabel, startOfLocalDay, addDays } from '../lib/time.js';
+import {
+  HOUR, MINUTE, clockTime, formatDuration, dayLabel, startOfLocalDay, addDays,
+  toDateInput, fromDateInput, dayKey,
+} from '../lib/time.js';
 
 const WINDOWS = [7, 14, 30];
 
@@ -38,12 +42,24 @@ function formatValue(metric, value) {
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
 }
 
+/** A period as the picker holds it. */
+const DEFAULT_A = { kind: '24h', date: null };
+const DEFAULT_B = { kind: 'yesterday', date: null };
+
+function periodLabel(period, range, now) {
+  if (period.kind === '24h') return 'Last 24 hours';
+  if (period.kind === 'today') return 'Today so far';
+  if (period.kind === 'yesterday') return 'Yesterday';
+  return dayLabel(range.from, now) + (range.partial ? ' so far' : '');
+}
+
 export default function Overview({ theme, events, store, now }) {
   const days = store.prefs.window;
   const [showTable, setShowTable] = useState(false);
+  const [periodA, setPeriodA] = useState(DEFAULT_A);
+  const [periodB, setPeriodB] = useState(DEFAULT_B);
+  const [compare, setCompare] = useState(false);
 
-  const from24 = now - 24 * HOUR;
-  const last24 = useMemo(() => windowTotals(events, from24, now + 1, now), [events, from24, now]);
   const rows = useMemo(() => dailyTotals(events, Math.max(days, 7), now), [events, days, now]);
   const usual = useMemo(() => baseline(dailyTotals(events, 30, now)), [events, now]);
   const weekly = useMemo(() => weekOverWeek(events, now), [events, now]);
@@ -59,33 +75,23 @@ export default function Overview({ theme, events, store, now }) {
 
   return (
     <Card theme={theme}>
-      <CardTitle theme={theme}>Overview</CardTitle>
+      <CardTitle
+        theme={theme}
+        right={
+          <Chip theme={theme} active={compare} onClick={() => { setCompare((v) => !v); if (!compare && periodA.kind === '24h') setPeriodA({ kind: 'today', date: null }); }}>
+            Compare
+          </Chip>
+        }
+      >Overview</CardTitle>
 
-      {/* 1. Last 24 hours vs usual ------------------------------------------ */}
-      <SectionLabel theme={theme}>Last 24 hours</SectionLabel>
-      <div style={{
-        display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(112px, 1fr))', gap: 8,
-      }}>
-        {METRICS.map((m) => (
-          <StatTile
-            key={m.key}
-            theme={theme}
-            metric={m}
-            value={last24[m.key]}
-            usual={usual.ready ? usual[m.key] : null}
-            rows={rows.slice(-7)}
-          />
-        ))}
-      </div>
-      <Muted theme={theme} size={11} style={{ marginTop: 8 }}>
-        {usual.ready
-          ? `“Usually” is the average of the last ${usual.days} full ${usual.days === 1 ? 'day' : 'days'}.`
-          : `A baseline appears after ${BASELINE_MIN_DAYS} full days — ${usual.days} so far.`}
-      </Muted>
-
-      {/* 2. The day on a clock ----------------------------------------------- */}
-      <SectionLabel theme={theme} style={{ marginTop: 18 }}>The last 24 hours, hour by hour</SectionLabel>
-      <Timeline theme={theme} events={events} from={from24} to={now} now={now} />
+      {compare ? (
+        <CompareView
+          theme={theme} events={events} now={now} usual={usual} rows={rows}
+          periodA={periodA} periodB={periodB} onA={setPeriodA} onB={setPeriodB}
+        />
+      ) : (
+        <PeriodView theme={theme} events={events} now={now} usual={usual} rows={rows} period={periodA} onChange={setPeriodA} />
+      )}
 
       {/* 3. Day by day ------------------------------------------------------- */}
       <div style={{
@@ -137,10 +143,181 @@ function Key({ theme, category, shape = 'dot' }) {
 }
 
 // ---------------------------------------------------------------------------
+// Period picker and the two views it drives.
+// ---------------------------------------------------------------------------
+
+const PERIODS = [
+  { kind: '24h', label: 'Last 24h' },
+  { kind: 'today', label: 'Today' },
+  { kind: 'yesterday', label: 'Yesterday' },
+  { kind: 'date', label: 'Pick a day' },
+];
+
+/** One row of chips, with a date field when a specific day is chosen. */
+function PeriodPicker({ theme, period, onChange, now, allowRolling = true, accent }) {
+  const options = allowRolling ? PERIODS : PERIODS.filter((p) => p.kind !== '24h');
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+      {options.map((p) => (
+        <Chip
+          key={p.kind}
+          theme={theme}
+          accent={accent}
+          active={period.kind === p.kind}
+          onClick={() => onChange({ kind: p.kind, date: p.kind === 'date' ? (period.date ?? toDateInput(addDays(now, -2))) : null })}
+        >{p.label}</Chip>
+      ))}
+      {period.kind === 'date' && (
+        <input
+          type="date"
+          value={period.date ?? ''}
+          max={toDateInput(now)}
+          onChange={(e) => onChange({ kind: 'date', date: e.target.value })}
+          style={{
+            border: `1px solid ${theme.line}`, background: theme.bg, color: theme.ink,
+            borderRadius: 999, padding: '5px 10px', fontSize: 12, minWidth: 0,
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function resolve(period, now) {
+  const dateTs = period.kind === 'date' ? (fromDateInput(period.date) ?? now) : null;
+  return periodRange(period.kind, now, dateTs);
+}
+
+/** The baseline that is fair for this period: full-day, or by-this-time. */
+function usualFor(events, range, usual, now) {
+  if (!range.partial || range.rolling) return usual;
+  return usualByElapsed(events, range.to - range.from, now);
+}
+
+function stripProps(range) {
+  if (range.rolling) return { leftLabel: '24h ago', rightLabel: 'now', axisTo: range.to };
+  return { leftLabel: '00:00', rightLabel: '24:00', axisTo: range.dayEnd };
+}
+
+function PeriodView({ theme, events, now, usual, rows, period, onChange }) {
+  const range = useMemo(() => resolve(period, now), [period, now]);
+  const totals = useMemo(() => windowTotals(events, range.from, range.to + 1, now), [events, range, now]);
+  const base = useMemo(() => usualFor(events, range, usual, now), [events, range, usual, now]);
+  const label = periodLabel(period, range, now);
+
+  return (
+    <>
+      <PeriodPicker theme={theme} period={period} onChange={onChange} now={now} />
+
+      <SectionLabel theme={theme} style={{ marginTop: 14 }}>{label}</SectionLabel>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(112px, 1fr))', gap: 8 }}>
+        {METRICS.map((m) => (
+          <StatTile
+            key={m.key}
+            theme={theme}
+            metric={m}
+            value={totals[m.key]}
+            usual={base.ready ? base[m.key] : null}
+            usualWord={base.byTime ? 'usually by now' : 'usually'}
+            highlightKey={range.rolling ? null : dayKey(range.from)}
+            rows={rows.slice(-7)}
+          />
+        ))}
+      </div>
+      <Muted theme={theme} size={11} style={{ marginTop: 8 }}>
+        {base.ready
+          ? (base.byTime
+            ? `“Usually by now” is what the last ${base.days} full days had reached by this time of day.`
+            : `“Usually” is the average of the last ${base.days} full ${base.days === 1 ? 'day' : 'days'}.`)
+          : `A baseline appears after ${BASELINE_MIN_DAYS} full days — ${base.days} so far.`}
+      </Muted>
+
+      <SectionLabel theme={theme} style={{ marginTop: 18 }}>
+        {range.rolling ? 'The last 24 hours, hour by hour' : `${label.replace(' so far', '')}, hour by hour`}
+      </SectionLabel>
+      <Timeline theme={theme} events={events} from={range.from} to={range.to} now={now} {...stripProps(range)} />
+    </>
+  );
+}
+
+/** Two periods side by side: the four metrics with deltas, then both strips. */
+function CompareView({ theme, events, now, usual, rows, periodA, periodB, onA, onB }) {
+  const a = useMemo(() => resolve(periodA, now), [periodA, now]);
+  const b = useMemo(() => resolve(periodB, now), [periodB, now]);
+  const ta = useMemo(() => windowTotals(events, a.from, a.to + 1, now), [events, a, now]);
+  const tb = useMemo(() => windowTotals(events, b.from, b.to + 1, now), [events, b, now]);
+  const la = periodLabel(periodA, a, now);
+  const lb = periodLabel(periodB, b, now);
+  const accentA = theme.ink;
+  const accentB = categoryColor(theme, 'expected');
+
+  const cell = { padding: '7px 6px', fontSize: 13, borderBottom: `1px solid ${theme.line}` };
+  const num = { ...cell, textAlign: 'right', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' };
+  const head = { ...cell, fontSize: 10.5, letterSpacing: '0.08em', textTransform: 'uppercase', color: theme.inkFaint, fontWeight: 600, textAlign: 'right' };
+
+  const deltaText = (m, va, vb) => {
+    const d = va - vb;
+    const tol = m.unit === 'minutes' ? 20 : 0.5;
+    if (Math.abs(d) < tol) return 'same';
+    const sign = d > 0 ? '+' : '−';
+    return `${sign}${formatValue(m, Math.abs(d))}`;
+  };
+
+  return (
+    <>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: accentA, width: 14 }}>A</span>
+          <PeriodPicker theme={theme} period={periodA} onChange={onA} now={now} allowRolling={false} />
+        </div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: accentB, width: 14 }}>B</span>
+          <PeriodPicker theme={theme} period={periodB} onChange={onB} now={now} allowRolling={false} accent={accentB} />
+        </div>
+      </div>
+
+      {(a.partial || b.partial) && (
+        <Muted theme={theme} size={11} style={{ marginTop: 8 }}>
+          A day still in progress is compared as far as it has got — the numbers are not final.
+        </Muted>
+      )}
+
+      <div style={{ overflowX: 'auto', marginTop: 12 }}>
+        <table style={{ borderCollapse: 'collapse', width: '100%', color: theme.ink }}>
+          <thead>
+            <tr>
+              <th style={{ ...head, textAlign: 'left' }}></th>
+              <th style={head}>A · {la}</th>
+              <th style={{ ...head, color: accentB }}>B · {lb}</th>
+              <th style={head}>A − B</th>
+            </tr>
+          </thead>
+          <tbody>
+            {METRICS.map((m) => (
+              <tr key={m.key}>
+                <td style={cell}><Key theme={theme} category={m.category} /> {m.label}</td>
+                <td style={{ ...num, fontWeight: 650 }}>{formatValue(m, ta[m.key])}</td>
+                <td style={{ ...num, fontWeight: 650 }}>{formatValue(m, tb[m.key])}</td>
+                <td style={{ ...num, color: theme.inkSoft }}>{deltaText(m, ta[m.key], tb[m.key])}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <SectionLabel theme={theme} style={{ marginTop: 18, color: accentA }}>A · {la.replace(' so far', '')}</SectionLabel>
+      <Timeline theme={theme} events={events} from={a.from} to={a.to} now={now} {...stripProps(a)} />
+      <SectionLabel theme={theme} style={{ marginTop: 18, color: accentB }}>B · {lb.replace(' so far', '')}</SectionLabel>
+      <Timeline theme={theme} events={events} from={b.from} to={b.to} now={now} {...stripProps(b)} />
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // 1. Stat tile: value, "usually", and the last seven days as a strip.
 // ---------------------------------------------------------------------------
 
-function StatTile({ theme, metric, value, usual, rows }) {
+function StatTile({ theme, metric, value, usual, rows, usualWord = 'usually', highlightKey = null }) {
   const accent = categoryColor(theme, metric.category);
   const soft = categoryTint(theme, metric.category, theme.name === 'night' ? 0.42 : 0.32);
 
@@ -166,7 +343,7 @@ function StatTile({ theme, metric, value, usual, rows }) {
       </div>
       <div style={{ fontSize: 11, color: theme.inkSoft, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
         {usual != null
-          ? <>{cue !== '—' && <span style={{ fontSize: 9, marginRight: 3 }}>{cue}</span>}usually {formatValue(metric, usual)}</>
+          ? <>{cue !== '—' && <span style={{ fontSize: 9, marginRight: 3 }}>{cue}</span>}{usualWord} {formatValue(metric, usual)}</>
           : <span style={{ color: theme.inkFaint }}>no baseline yet</span>}
       </div>
       {/* Seven thin columns; the past in the soft tint, today in the accent. */}
@@ -177,7 +354,7 @@ function StatTile({ theme, metric, value, usual, rows }) {
           return (
             <rect
               key={r.key} x={i * 10 + 1} y={22 - h} width={8} height={h} rx={1.5}
-              fill={r.isToday ? accent : soft}
+              fill={(highlightKey ? r.key === highlightKey : r.isToday) ? accent : soft}
             />
           );
         })}
@@ -191,7 +368,7 @@ function StatTile({ theme, metric, value, usual, rows }) {
 // 2. The 24-hour strip.
 // ---------------------------------------------------------------------------
 
-function Timeline({ theme, events, from, to, now }) {
+function Timeline({ theme, events, from, to, now, leftLabel = '24h ago', rightLabel = 'now', axisTo = to }) {
   const data = useMemo(() => timelineData(events, from, to, now), [events, from, to, now]);
   const longest = useMemo(() => longestSleep(events, from, to, now), [events, from, to, now]);
   const gap = useMemo(() => feedGapInWindow(events, from, to + 1), [events, from, to]);
@@ -200,7 +377,9 @@ function Timeline({ theme, events, from, to, now }) {
   const W = 520;
   const H = 92;
   const pad = 10;
-  const x = (ts) => pad + ((ts - from) / (to - from)) * (W - 2 * pad);
+  // The axis may run past the data (a day still in progress runs to 24:00).
+  const x = (ts) => pad + ((ts - from) / (axisTo - from)) * (W - 2 * pad);
+  const nowInside = now >= from && now <= axisTo;
   const laneSleep = 18;
   const laneFeed = 46;
   const laneDiaper = 68;
@@ -213,7 +392,7 @@ function Timeline({ theme, events, from, to, now }) {
 
   // Clean hour labels: every local 06/12/18/00 that falls inside the window.
   const ticks = [];
-  for (let t = startOfLocalDay(from); t <= to; t += 6 * HOUR) {
+  for (let t = startOfLocalDay(from); t <= axisTo; t += 6 * HOUR) {
     const px = x(t);
     if (px > pad + 44 && px < W - pad - 30) ticks.push(t);
   }
@@ -236,8 +415,8 @@ function Timeline({ theme, events, from, to, now }) {
             <text x={x(t)} y={H - 4} fontSize="9" fill={theme.inkFaint} textAnchor="middle">{clockTime(t)}</text>
           </g>
         ))}
-        <text x={pad} y={H - 4} fontSize="9" fill={theme.inkFaint}>24h ago</text>
-        <text x={W - pad} y={H - 4} fontSize="9" fill={theme.inkFaint} textAnchor="end">now</text>
+        <text x={pad} y={H - 4} fontSize="9" fill={theme.inkFaint}>{leftLabel}</text>
+        <text x={W - pad} y={H - 4} fontSize="9" fill={theme.inkFaint} textAnchor="end">{rightLabel}</text>
 
         {/* Sleep spans, 12px thick, square where a session is still running. */}
         {data.sleeps.map((s) => {
@@ -280,8 +459,10 @@ function Timeline({ theme, events, from, to, now }) {
           </g>
         ))}
 
-        {/* Now. */}
-        <line x1={x(to)} y1={laneSleep - 12} x2={x(to)} y2={laneDiaper + 12} stroke={theme.inkSoft} strokeWidth="1" />
+        {/* Now — only when it falls inside the axis. */}
+        {nowInside && (
+          <line x1={x(now)} y1={laneSleep - 12} x2={x(now)} y2={laneDiaper + 12} stroke={theme.inkSoft} strokeWidth="1" />
+        )}
       </svg>
 
       {/* Legend: with five marks, identity never rests on colour alone. */}

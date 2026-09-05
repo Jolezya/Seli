@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   overlapMs, windowTotals, dailyTotals, baseline, timelineData, longestSleep,
-  feedGapInWindow, weekOverWeek, BASELINE_MIN_DAYS,
+  feedGapInWindow, weekOverWeek, BASELINE_MIN_DAYS, periodRange, usualByElapsed,
 } from '../src/lib/analytics.js';
 import { HOUR, DAY, MINUTE } from '../src/lib/time.js';
 
@@ -159,5 +159,43 @@ describe('window totals sums bottle volume and both sleep types', () => {
     expect(t.nightMin).toBe(6 * 60);
     expect(t.sleepMin).toBe(45 + 360);
     expect(t.feeds).toBe(2);
+  });
+});
+
+describe('period ranges and the by-this-time baseline', () => {
+  it('resolves today, yesterday, a date and the rolling day', () => {
+    const now = at(4, 7, 15);   // 4 Sept, 07:15
+    const today = periodRange('today', now);
+    expect(today.from).toBe(at(4, 0));
+    expect(today.to).toBe(now);
+    expect(today.partial).toBe(true);
+    expect(today.dayEnd).toBe(at(5, 0));
+
+    const yesterday = periodRange('yesterday', now);
+    expect(yesterday.from).toBe(at(3, 0));
+    expect(yesterday.to).toBe(at(4, 0));
+    expect(yesterday.partial).toBe(false);
+
+    const picked = periodRange('date', now, at(1, 13));
+    expect(picked.from).toBe(at(1, 0));
+    expect(picked.to).toBe(at(2, 0));
+
+    const rolling = periodRange('24h', now);
+    expect(rolling.rolling).toBe(true);
+    expect(rolling.to - rolling.from).toBe(DAY);
+  });
+
+  it('compares a partial day against what earlier days had reached by the same time', () => {
+    // Four full days with feeds at 02:00, 05:00, 09:00, 14:00; today it is 07:15.
+    const events = [];
+    for (let d = 1; d <= 4; d++) for (const h of [2, 5, 9, 14]) events.push(ev('nurse', at(d, h), { end_ts: at(d, h) }));
+    events.push(ev('nurse', at(5, 3), { end_ts: at(5, 3) }));
+    const now = at(5, 7, 15);
+    const byNow = usualByElapsed(events, now - at(5, 0), now);
+    expect(byNow.ready).toBe(true);
+    expect(byNow.byTime).toBe(true);
+    expect(byNow.feeds).toBe(2);          // 02:00 and 05:00 had happened by 07:15
+    const fullDay = baseline(dailyTotals(events, 30, now));
+    expect(fullDay.feeds).toBe(4);        // the whole-day figure it must NOT be compared to
   });
 });

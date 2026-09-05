@@ -413,3 +413,43 @@ export function weekOverWeek(events, now = Date.now()) {
     poop: metric('poop'),
   };
 }
+
+
+// ---------------------------------------------------------------------------
+// Periods: a chosen day, or the rolling last 24 hours.
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve a period choice to a window.
+ *   '24h'       → the rolling last 24 hours, ending now
+ *   'today'     → local midnight → now (partial)
+ *   'yesterday' → yesterday, midnight to midnight
+ *   'date'      → the given local day, midnight to midnight (partial if today)
+ */
+export function periodRange(kind, now = Date.now(), dateTs = null) {
+  if (kind === '24h') return { from: now - DAY, to: now, partial: true, rolling: true };
+  let day0;
+  if (kind === 'today') day0 = startOfLocalDay(now);
+  else if (kind === 'yesterday') day0 = addDays(startOfLocalDay(now), -1);
+  else day0 = startOfLocalDay(dateTs ?? now);
+  const end = addDays(day0, 1);
+  const partial = now < end;
+  return { from: day0, to: partial ? Math.max(now, day0) : end, dayEnd: end, partial, rolling: false };
+}
+
+/**
+ * "Usually, by this time of day": the average over full tracked days of what
+ * had happened in the first `elapsedMs` of each. Comparing a half-finished
+ * day against whole-day averages would make every morning look alarming.
+ */
+export function usualByElapsed(events, elapsedMs, now = Date.now()) {
+  const rows = dailyTotals(events, 30, now).filter((r) => r.tracked && !r.isToday);
+  if (rows.length < BASELINE_MIN_DAYS) return { days: rows.length, ready: false };
+  const slices = rows.map((r) => windowTotals(events, r.dayTs, r.dayTs + elapsedMs, now));
+  const avg = (key) => slices.reduce((sum, t) => sum + t[key], 0) / slices.length;
+  return {
+    days: rows.length, ready: true, byTime: true,
+    feeds: avg('feeds'), bottleMl: avg('bottleMl'), sleepMin: avg('sleepMin'),
+    wet: avg('wet'), poop: avg('poop'), tummyMin: avg('tummyMin'),
+  };
+}
