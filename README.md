@@ -194,6 +194,7 @@ src/
     analytics.js   comparison series, heatmap, feed rhythm, predictions
     weight.js      weigh-ins, nadir, expected trajectory, projection
     files.js       backup / restore / CSV export
+    backup.js      reads Seli and original-ChEckIn backup files
     push.js        optional push subscription
     config.js      env vars + optional runtime override
   components/      Header, TaskCard, Tiles, WeightCard, Overview,
