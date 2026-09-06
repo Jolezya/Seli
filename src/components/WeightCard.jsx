@@ -20,12 +20,17 @@ export default function WeightCard({ theme, events, store, now }) {
 
   const sex = SEXES.includes(store.prefs.sex) ? store.prefs.sex : 'girl';
   const birthTs = fromDateInput(store.prefs.birthDate) ?? localNoon(now);
+  const dueTs = fromDateInput(store.prefs.dueDate);
+  const correct = Boolean(store.prefs.correctAge);
   const range = store.prefs.weightRange;
   const accent = categoryColor(theme, 'weight');
   const refColor = categoryColor(theme, 'expected');
   const pronoun = sex === 'girl' ? { she: 'she', her: 'her' } : { she: 'he', her: 'his' };
 
-  const g = useMemo(() => growthSummary(events, { birthTs, sex }, now), [events, birthTs, sex, now]);
+  const g = useMemo(
+    () => growthSummary(events, { birthTs, sex, dueTs, correct }, now),
+    [events, birthTs, sex, dueTs, correct, now],
+  );
   const visible = useMemo(() => inRange(g.list, range, now), [g.list, range, now]);
   const selected = selectedId ? g.list.find((p) => p.id === selectedId) : null;
 
@@ -156,7 +161,7 @@ export default function WeightCard({ theme, events, store, now }) {
           ))}
         </div>
         <Chip theme={theme} accent={refColor} active={editingFacts} onClick={() => setEditingFacts((v) => !v)}>
-          Born {shortDate(birthTs)} · {sex}
+          Born {shortDate(birthTs)} · {sex}{g.corrected ? ' · corrected' : ''}
         </Chip>
       </div>
 
@@ -175,12 +180,35 @@ export default function WeightCard({ theme, events, store, now }) {
               {s === 'girl' ? 'Girl' : 'Boy'}
             </Chip>
           ))}
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, flex: '1 1 100%', fontSize: 12, color: theme.inkSoft }}>
+            Due
+            <input
+              type="date"
+              value={store.prefs.dueDate || ''}
+              onChange={(e) => store.setPrefs({ dueDate: e.target.value || null })}
+              aria-label="Due date"
+              style={inputStyle(theme, { flex: '1 1 130px' })}
+            />
+          </label>
+          {g.early.earlyDays > 0 && (
+            <>
+              <Chip theme={theme} accent={refColor} active={correct} onClick={() => store.setPrefs({ correctAge: !correct })}>
+                {correct ? 'Corrected age on' : 'Corrected age off'}
+              </Chip>
+              <Muted theme={theme} size={11} style={{ flex: '1 1 100%' }}>
+                Born {earlyLabel(g.early.earlyDays)} early, at {g.early.weeks} weeks {g.early.days} days.
+                {' '}Corrected age counts from the due date, so the chart compares {pronoun.her} with babies of the same maturity.
+                {' '}Charts usually correct only before 37 weeks; it is your call.
+              </Muted>
+            </>
+          )}
         </div>
       )}
 
       <Muted theme={theme} size={11} style={{ marginTop: 8 }}>
         <span style={{ color: accent }}>●</span> weigh-ins · <span style={{ color: accent }}>dashed</span> = {pronoun.her} curve
         {g.pctLabel ? ` (${g.pctLabel})` : ''} · <span style={{ color: refColor }}>bands</span> = WHO 3rd–97th, darker 15th–85th, line = 50th
+        {g.corrected && ' · ages corrected to the due date'}
       </Muted>
     </Card>
   );
@@ -197,20 +225,40 @@ function PercentileLine({ theme, g, refColor, sex }) {
   let tail = null;
   let color = refColor;
   if (!t) {
-    tail = `for a ${sex} ${sex === 'girl' ? 'her' : 'his'} age`;
+    tail = g.corrected ? `on the WHO ${sex}s chart` : `for a ${sex} ${sex === 'girl' ? 'her' : 'his'} age`;
   } else if (t.flag) {
     color = theme.warn;
-    tail = `crossed ${t.crossed} percentile lines ${t.direction === 'up' ? 'upwards' : 'downwards'} since ${shortDate(g.first.start_ts)} (${ordinal(t.fromPct)} → ${ordinal(t.toPct)}) · worth mentioning at the next check`;
+    tail = `crossed ${t.crossed} percentile lines ${t.direction === 'up' ? 'upwards' : 'downwards'} since ${shortDate(g.placedFirst.start_ts)} (${ordinal(t.fromPct)} → ${ordinal(t.toPct)}) · worth mentioning at the next check`;
   } else if (t.direction === 'same') {
-    tail = `same curve since ${shortDate(g.first.start_ts)} (${ordinal(t.fromPct)} → ${ordinal(t.toPct)})`;
+    tail = `same curve since ${shortDate(g.placedFirst.start_ts)} (${ordinal(t.fromPct)} → ${ordinal(t.toPct)})`;
   } else {
-    tail = `drifting ${t.direction} since ${shortDate(g.first.start_ts)} (${ordinal(t.fromPct)} → ${ordinal(t.toPct)}), within the usual range`;
+    tail = `drifting ${t.direction} since ${shortDate(g.placedFirst.start_ts)} (${ordinal(t.fromPct)} → ${ordinal(t.toPct)}), within the usual range`;
   }
   return (
     <Muted theme={theme} style={{ marginTop: 4, color }}>
-      <strong style={{ color: theme.ink }}>{g.pctLabel} percentile</strong> · {tail}
+      <strong style={{ color: theme.ink }}>{g.pctLabel} percentile</strong>
+      {g.corrected && <span style={{ color: theme.inkSoft }}> at corrected age {ageLabel(g.latest.chartDay)}</span>}
+      {' · '}{tail}
     </Muted>
   );
+}
+
+/** "2½ weeks" / "5 days" / "3 weeks" */
+function earlyLabel(days) {
+  if (days < 7) return `${days} day${days === 1 ? '' : 's'}`;
+  const weeks = days / 7;
+  const whole = Math.floor(weeks);
+  const rem = days - whole * 7;
+  const half = rem >= 3 && rem <= 4 ? '½' : '';
+  const n = rem >= 5 ? whole + 1 : whole;
+  return `${n}${half} week${n === 1 && !half ? '' : 's'}`;
+}
+
+/** "8 wk" / "3 mo" — the unit clinicians read the chart in. */
+function ageLabel(days) {
+  if (days < 0) return `${Math.abs(days)} d before due`;
+  if (days < 14 * 7) return `${Math.floor(days / 7)} wk`;
+  return `${Math.floor(days / MONTH_DAYS)} mo`;
 }
 
 /** The row under the chart for a tapped weigh-in, with edit and delete. */
@@ -226,6 +274,7 @@ function PointDetail({ theme, point, previous, accent, onEdit, onDelete }) {
       <div style={{ flex: 1, minWidth: 160, fontSize: 12, color: theme.ink }}>
         <strong>{shortDate(point.start_ts)}</strong> · {formatGrams(point.amount)}
         {point.pct != null && ` · ${ordinal(point.pct)} percentile`}
+        {point.pct == null && point.chartDay < 0 && ' · before the due date, no percentile'}
         {gain != null && ` · ${signed(gain)} g/day since ${shortDate(previous.start_ts)}`}
         {point.ageDays === 0 && ' · birth'}
       </div>
@@ -261,20 +310,23 @@ function GrowthChart({ theme, g, points, sex, range, now, accent, refColor, sele
   const H = 180;
   const pad = { top: 12, right: 14, bottom: 22, left: 8 };
 
+  // Everything on the x-axis is a chart day: chronological age, or corrected
+  // age when the family asked for it. Birth can then sit left of day 0.
   const rangeDays = RANGES.find((r) => r.key === range)?.days ?? null;
-  const ageToday = g.ageToday;
-  const fromDay = rangeDays == null ? 0 : Math.max(0, ageToday - (rangeDays - 1));
+  const ageToday = g.chartToday;
+  const birthDay = -g.earlyDays;
+  const fromDay = rangeDays == null ? birthDay : Math.max(birthDay, ageToday - (rangeDays - 1));
   const toDay = ageToday + Math.max(2, Math.round((ageToday - fromDay) * 0.04));
   const step = Math.max(1, Math.floor((toDay - fromDay) / 120));
 
-  const bands = useMemo(() => bandSeries(sex, fromDay, toDay, step), [sex, fromDay, toDay, step]);
+  const bands = useMemo(() => bandSeries(sex, Math.max(0, fromDay), toDay, step), [sex, fromDay, toDay, step]);
   const curve = useMemo(
-    () => (g.latest ? curveSeries(sex, g.z, Math.max(fromDay, g.latest.ageDays), ageToday, step) : []),
+    () => (g.latest && g.z != null ? curveSeries(sex, g.z, Math.max(fromDay, 0, g.latest.chartDay), ageToday, step) : []),
     [sex, g.z, g.latest, fromDay, ageToday, step],
   );
   if (!bands.length) return null;
 
-  const shown = points.filter((p) => p.ageDays >= fromDay && p.ageDays <= toDay);
+  const shown = points.filter((p) => p.chartDay >= fromDay && p.chartDay <= toDay);
   const ys = [
     ...bands.map((b) => b.lo2), ...bands.map((b) => b.hi2),
     ...shown.map((p) => p.amount), ...curve.map((c) => c.grams),
@@ -290,7 +342,7 @@ function GrowthChart({ theme, g, points, sex, range, now, accent, refColor, sele
   const area = (hiKey, loKey) => `M${bands.map((b) => pt(b.day, b[hiKey])).join(' L')} L${[...bands].reverse().map((b) => pt(b.day, b[loKey])).join(' L')} Z`;
   const line = (rows, key) => `M${rows.map((r) => pt(r.day, r[key])).join(' L')}`;
 
-  const actualPath = shown.length > 1 ? `M${shown.map((p) => pt(p.ageDays, p.amount)).join(' L')}` : null;
+  const actualPath = shown.length > 1 ? `M${shown.map((p) => pt(p.chartDay, p.amount)).join(' L')}` : null;
   const curvePath = curve.length > 1 ? line(curve, 'grams') : null;
   const todayOnCurve = g.today?.onCurve;
 
@@ -300,11 +352,13 @@ function GrowthChart({ theme, g, points, sex, range, now, accent, refColor, sele
   const ticks = [];
   for (let m = 1; m * MONTH_DAYS <= toDay; m += every) {
     const day = m * MONTH_DAYS;
-    if (day >= fromDay) ticks.push({ day, label: `${m} mo` });
+    // Skip a tick label that would run into the "today" date at the right edge.
+    if (day >= fromDay && x(day) < W - pad.right - 44) ticks.push({ day, label: `${m} mo` });
   }
-  const birthTs = addDays(localNoon(now), -ageToday);
-  const leftDate = shortDate(addDays(birthTs, fromDay));
+  const birthTs = addDays(localNoon(now), -g.ageToday);
+  const leftDate = shortDate(addDays(birthTs, fromDay - birthDay));
   const rightDate = shortDate(now);
+  const dueTick = g.corrected && fromDay < 0 ? { day: 0, label: `due · ${shortDate(addDays(birthTs, g.earlyDays))}` } : null;
 
   return (
     <svg
@@ -316,7 +370,7 @@ function GrowthChart({ theme, g, points, sex, range, now, accent, refColor, sele
       <path d={area('hi2', 'lo2')} fill={categoryTint(theme, 'expected', theme.name === 'night' ? 0.14 : 0.10)} />
       <path d={area('hi1', 'lo1')} fill={categoryTint(theme, 'expected', theme.name === 'night' ? 0.18 : 0.13)} />
       <path d={line(bands, 'med')} fill="none" stroke={refColor} strokeWidth="1" opacity="0.7" />
-      {ticks.map((t) => (
+      {[...(dueTick ? [dueTick] : []), ...ticks].map((t) => (
         <g key={t.label}>
           <line x1={x(t.day)} y1={pad.top} x2={x(t.day)} y2={H - pad.bottom} stroke={theme.line} strokeWidth="0.75" />
           <text x={x(t.day)} y={H - pad.bottom + 11} fontSize="8.5" fill={theme.inkFaint} textAnchor="middle">{t.label}</text>
@@ -338,11 +392,11 @@ function GrowthChart({ theme, g, points, sex, range, now, accent, refColor, sele
         const isEnd = i === shown.length - 1 || i === 0 || isSel;
         return (
           <g key={p.id} onClick={() => onSelect(p.id)} style={{ cursor: 'pointer' }}>
-            <circle cx={x(p.ageDays)} cy={y(p.amount)} r="12" fill="transparent" />
-            <circle cx={x(p.ageDays)} cy={y(p.amount)} r={isSel ? 5 : 3.5} fill={accent} stroke={theme.surface} strokeWidth="1.5" />
+            <circle cx={x(p.chartDay)} cy={y(p.amount)} r="12" fill="transparent" />
+            <circle cx={x(p.chartDay)} cy={y(p.amount)} r={isSel ? 5 : 3.5} fill={accent} stroke={theme.surface} strokeWidth="1.5" />
             {isEnd && (
               <text
-                x={Math.max(pad.left + 14, Math.min(W - pad.right - 14, x(p.ageDays)))}
+                x={Math.max(pad.left + 14, Math.min(W - pad.right - 14, x(p.chartDay)))}
                 y={y(p.amount) - 9}
                 fontSize="9"
                 fill={theme.inkSoft}
@@ -354,7 +408,7 @@ function GrowthChart({ theme, g, points, sex, range, now, accent, refColor, sele
         );
       })}
 
-      <text x={pad.left} y={H - 3} fontSize="8.5" fill={theme.inkFaint}>{fromDay === 0 ? `birth · ${leftDate}` : leftDate}</text>
+      <text x={pad.left} y={H - 3} fontSize="8.5" fill={theme.inkFaint}>{fromDay === birthDay ? `birth · ${leftDate}` : leftDate}</text>
       <text x={W - pad.right} y={H - 3} fontSize="8.5" fill={theme.inkFaint} textAnchor="end">today · {rightDate}</text>
     </svg>
   );
