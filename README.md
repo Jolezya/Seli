@@ -192,11 +192,16 @@ src/
     queue.js       the durable outbound queue
     sync.js        SyncEngine: flush, pull, realtime, status
     analytics.js   comparison series, heatmap, feed rhythm, predictions
-    weight.js      weigh-ins, nadir, expected trajectory, projection
+    weight.js      weigh-ins, ranges, formatting
+    who.js         WHO weight-for-age LMS maths: z-scores, percentiles
+    growth.js      percentile placement, trend, milestones, chart bands
     files.js       backup / restore / CSV export
     backup.js      reads Seli and original-ChEckIn backup files
     push.js        optional push subscription
     config.js      env vars + optional runtime override
+  data/            WHO Child Growth Standards weight-for-age tables (girls, boys),
+                   daily LMS parameters, birth to two years — the WHO's data,
+                   reproduced for computational use
   components/      Header, TaskCard, Tiles, WeightCard, Overview,
                    PatternsCard, DayLog, Toast
   store.js         the one hook that owns events, sync and prefs

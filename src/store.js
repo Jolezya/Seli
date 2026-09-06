@@ -25,6 +25,10 @@ const DEFAULT_PREFS = {
   metric: 'feeds',
   window: 7,
   weightRange: '3m',
+  // The two facts the growth chart needs. Defaults are this family's, so both
+  // phones agree without a setup step; editable on the Weight card.
+  birthDate: '2026-06-22',
+  sex: 'girl',
 };
 
 /** Periodic safety-net flush + pull, in case realtime or a retry was missed. */
