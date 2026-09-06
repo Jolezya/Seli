@@ -29,6 +29,11 @@ const DEFAULT_PREFS = {
   // phones agree without a setup step; editable on the Weight card.
   birthDate: '2026-06-22',
   sex: 'girl',
+  // Due date, and whether to read the growth chart at corrected age (age
+  // counted from the due date). She arrived 17 days early; the family asked
+  // for the correction, so it is on. The card lets them turn it off.
+  dueDate: '2026-07-09',
+  correctAge: true,
 };
 
 /** Periodic safety-net flush + pull, in case realtime or a retry was missed. */

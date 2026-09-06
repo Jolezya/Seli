@@ -16,13 +16,40 @@ export function ageInDays(birthTs, ts) {
   return daysBetween(birthTs, ts);
 }
 
-/** Weigh-ins with age, z-score and percentile attached. Pre-birth rows are dropped. */
-export function placedWeighIns(events, birthTs, sex) {
+/** A term pregnancy: babies born before this are conventionally age-corrected. */
+export const TERM_WEEKS = 37;
+
+/**
+ * How early the birth was, in days, and the gestation it implies. A due date
+ * marks 40 weeks; being born 17 days early means 37 weeks 4 days.
+ */
+export function prematurity(birthTs, dueTs) {
+  if (!dueTs) return { earlyDays: 0, gestationDays: null, weeks: null, days: null, preterm: false };
+  const earlyDays = Math.max(0, daysBetween(birthTs, dueTs));
+  const gestationDays = 280 - earlyDays;
+  return {
+    earlyDays,
+    gestationDays,
+    weeks: Math.floor(gestationDays / 7),
+    days: gestationDays % 7,
+    preterm: gestationDays < TERM_WEEKS * 7,
+  };
+}
+
+/**
+ * Weigh-ins with age, z-score and percentile attached. `chartDay` is the age
+ * the WHO chart is read at: chronological age, minus the days born early when
+ * correcting. A weigh-in before the corrected "day 0" (before the due date)
+ * keeps its place on the x-axis but has no percentile — the chart starts at
+ * term. Pre-birth rows are dropped.
+ */
+export function placedWeighIns(events, birthTs, sex, earlyDays = 0) {
   return weighIns(events)
     .map((w) => {
       const ageDays = ageInDays(birthTs, w.start_ts);
-      const z = zScore(sex, ageDays, w.amount);
-      return { ...w, ageDays, z, pct: z == null ? null : percentile(z) };
+      const chartDay = ageDays - earlyDays;
+      const z = chartDay >= 0 ? zScore(sex, chartDay, w.amount) : null;
+      return { ...w, ageDays, chartDay, z, pct: z == null ? null : percentile(z) };
     })
     .filter((w) => w.ageDays >= 0);
 }
@@ -53,16 +80,21 @@ export function trendOf(first, latest) {
  * Everything the Growth card shows, in one pass.
  * `birthTs` is any timestamp on the birth day; `sex` is 'girl' | 'boy'.
  */
-export function growthSummary(events, { birthTs, sex }, now = Date.now()) {
-  const list = placedWeighIns(events, birthTs, sex);
+export function growthSummary(events, { birthTs, sex, dueTs = null, correct = false }, now = Date.now()) {
+  const early = prematurity(birthTs, dueTs);
+  const earlyDays = correct ? early.earlyDays : 0;
+  const list = placedWeighIns(events, birthTs, sex, earlyDays);
   const ageToday = ageInDays(birthTs, now);
+  const chartToday = ageToday - earlyDays;
   const empty = {
-    list, latest: null, first: null, birthWeight: null, sinceBirth: null, gainPerDay: null,
-    z: null, pct: null, pctLabel: null, trend: null, today: null, milestones: null, rhythm: null, ageToday,
+    list, latest: null, first: null, placedFirst: null, birthWeight: null, sinceBirth: null, gainPerDay: null,
+    z: null, pct: null, pctLabel: null, trend: null, today: null, milestones: null, rhythm: null,
+    ageToday, chartToday, earlyDays, early, corrected: earlyDays > 0,
   };
   if (!list.length) return empty;
 
   const first = list[0];
+  const placedFirst = list.find((w) => w.z != null) || null;
   const latest = list[list.length - 1];
   const previous = list.length > 1 ? list[list.length - 2] : null;
   const birthWeight = first.ageDays <= BIRTH_WINDOW_DAYS ? first : null;
@@ -75,10 +107,11 @@ export function growthSummary(events, { birthTs, sex }, now = Date.now()) {
     ? (latest.amount - previous.amount) / (latest.ageDays - previous.ageDays)
     : null;
 
-  const today = z == null ? null : {
+  const today = z == null || chartToday < 0 ? null : {
     ageDays: ageToday,
-    onCurve: weightAtZ(sex, ageToday, z),
-    median: weightAtZ(sex, ageToday, 0),
+    chartDay: chartToday,
+    onCurve: weightAtZ(sex, chartToday, z),
+    median: weightAtZ(sex, chartToday, 0),
     weighedToday: latest.ageDays === ageToday ? latest.amount : null,
   };
 
@@ -93,8 +126,8 @@ export function growthSummary(events, { birthTs, sex }, now = Date.now()) {
     const doubled = list.find((w) => w.amount >= target);
     let doubledProjected = null;
     if (!doubled && z != null) {
-      const day = dayCurveReaches(sex, z, target, ageToday);
-      if (day != null) doubledProjected = { ts: addDays(localNoon(birthTs), day), ageDays: day };
+      const day = dayCurveReaches(sex, z, target, Math.max(0, chartToday));
+      if (day != null) doubledProjected = { ts: addDays(localNoon(birthTs), day + earlyDays), ageDays: day + earlyDays };
     }
     milestones = {
       target,
@@ -110,9 +143,10 @@ export function growthSummary(events, { birthTs, sex }, now = Date.now()) {
   const rhythm = { daysSince, due: daysSince >= limit, limit };
 
   return {
-    list, latest, first, birthWeight, sinceBirth, gainPerDay,
+    list, latest, first, placedFirst, birthWeight, sinceBirth, gainPerDay,
     z, pct, pctLabel: pct == null ? null : ordinal(pct),
-    trend: trendOf(first, latest), today, milestones, rhythm, ageToday,
+    trend: trendOf(placedFirst, latest), today, milestones, rhythm,
+    ageToday, chartToday, earlyDays, early, corrected: earlyDays > 0,
   };
 }
 

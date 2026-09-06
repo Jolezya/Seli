@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { growthSummary, bandSeries, curveSeries, dayCurveReaches, trendOf } from '../src/lib/growth.js';
+import { growthSummary, bandSeries, curveSeries, dayCurveReaches, trendOf, prematurity } from '../src/lib/growth.js';
 import { weightAtZ } from '../src/lib/who.js';
 
 const noon = (y, m, d) => new Date(y, m - 1, d, 12, 0, 0, 0).getTime();
@@ -90,5 +90,45 @@ describe('series', () => {
     expect(weightAtZ('girl', d, 0)).toBeGreaterThanOrEqual(6000);
     expect(weightAtZ('girl', d - 1, 0)).toBeLessThan(6000);
     expect(dayCurveReaches('girl', 0, 99999, 0)).toBeNull();
+  });
+});
+
+describe('corrected age for an early birth', () => {
+  const DUE = noon(2026, 7, 9);
+  const events = [w('a', BIRTH, 3035), w('b', noon(2026, 8, 31), 5160)];
+  const now = noon(2026, 9, 6);
+
+  it('works out how early, and the gestation', () => {
+    expect(prematurity(BIRTH, DUE)).toMatchObject({ earlyDays: 17, weeks: 37, days: 4, preterm: false });
+    expect(prematurity(BIRTH, noon(2026, 8, 1)).preterm).toBe(true);
+    expect(prematurity(BIRTH, null).earlyDays).toBe(0);
+    expect(prematurity(BIRTH, noon(2026, 6, 1)).earlyDays).toBe(0);
+  });
+  it('reads the chart at corrected age when asked', () => {
+    const plain = growthSummary(events, { birthTs: BIRTH, sex: 'girl', dueTs: DUE, correct: false }, now);
+    const corr = growthSummary(events, { birthTs: BIRTH, sex: 'girl', dueTs: DUE, correct: true }, now);
+    expect(plain.corrected).toBe(false);
+    expect(corr.corrected).toBe(true);
+    expect(corr.latest.ageDays).toBe(70);
+    expect(corr.latest.chartDay).toBe(53);
+    expect(corr.pct).toBeGreaterThan(plain.pct);
+    expect(corr.today.chartDay).toBe(59);
+    expect(corr.today.onCurve).toBe(weightAtZ('girl', 59, corr.z));
+  });
+  it('leaves a weigh-in before the due date without a percentile, but keeps it', () => {
+    const corr = growthSummary(events, { birthTs: BIRTH, sex: 'girl', dueTs: DUE, correct: true }, now);
+    expect(corr.first.chartDay).toBe(-17);
+    expect(corr.first.pct).toBeNull();
+    expect(corr.birthWeight.amount).toBe(3035);
+    expect(corr.sinceBirth).toBe(2125);
+    expect(corr.trend).toBeNull();
+    expect(corr.placedFirst.id).toBe('b');
+  });
+  it('projects milestones in real dates, not corrected ones', () => {
+    const plain = growthSummary(events, { birthTs: BIRTH, sex: 'girl', dueTs: DUE, correct: false }, now);
+    const corr = growthSummary(events, { birthTs: BIRTH, sex: 'girl', dueTs: DUE, correct: true }, now);
+    expect(corr.milestones.doubledProjected.ts).toBeGreaterThan(now);
+    expect(corr.milestones.doubledProjected.ageDays).toBe(corr.milestones.doubledProjected.ageDays);
+    expect(Math.abs(corr.milestones.doubledProjected.ts - plain.milestones.doubledProjected.ts)).toBeLessThan(30 * 24 * 3600e3);
   });
 });
