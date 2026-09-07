@@ -12,6 +12,8 @@ import { SLEEP_TYPES, openSleep, lastSleep, lastOfType } from '../lib/events.js'
 import { predictNext } from '../lib/analytics.js';
 import { formatGrams } from '../lib/weight.js';
 import { bathSchedule, bathHint, DEFAULT_BATH_DAYS } from '../lib/bath.js';
+import { growthSummary, growthSettings } from '../lib/growth.js';
+import { shortDate } from '../lib/time.js';
 
 /**
  * Six tiles, 3 rows x 2. `types` is what a tile reads; `mode` is what a tap
@@ -43,12 +45,15 @@ function daysAgo(ts, now) {
   return `${days}d ago`;
 }
 
-/** Weigh-ins are stamped at local noon, so the honest unit is the day. */
-function weighedLabel(ts, now) {
-  const days = -daysBetween(now, ts);
-  if (days <= 0) return 'weighed today';
-  if (days === 1) return 'weighed yesterday';
-  return `${days}d ago · ${new Date(ts).toLocaleDateString(undefined, { weekday: 'short' })}`;
+/**
+ * The weight tile's subtitle: what the reading means, and its date as a
+ * date — "65th percentile · 31 Aug". A weekday alone ("Mon") leaves you
+ * working out which Monday.
+ */
+function weighedLabel(g) {
+  const when = shortDate(g.latest.start_ts);
+  if (g.pctLabel == null) return `weighed ${when}`;
+  return `${g.pctLabel} pct${g.corrected ? ' (corrected)' : ''} · ${when}`;
 }
 
 export default function Tiles({ theme, events, store, now }) {
@@ -93,6 +98,18 @@ function Tile({ tile, theme, events, store, now, chooserOpen, onOpenChooser }) {
   const prediction = tile.key === 'nurse' || isWeight || isBath ? null : predictNext(events, tile.types, now);
   // Baths run to a schedule, not a rhythm, so the third line is the schedule.
   const bathLine = isBath ? bathHint(bathSchedule(events, store.prefs?.bathDays ?? DEFAULT_BATH_DAYS, now)) : null;
+  // The weight tile reads the growth chart: percentile under the number, and
+  // either today's expected weight or an overdue nudge on the third line.
+  const growth = isWeight ? growthSummary(events, growthSettings(store.prefs, now), now) : null;
+  const weightLine = growth?.latest
+    ? (growth.rhythm?.due
+      ? { text: 'weigh-in due', tone: 'warn' }
+      : growth.today?.weighedToday != null
+        ? { text: 'weighed today', tone: 'faint' }
+        : growth.today?.onCurve != null
+          ? { text: `≈ ${formatGrams(growth.today.onCurve)} today`, tone: 'faint' }
+          : null)
+    : null;
 
   const handleTap = () => {
     if (isSleep) { store.toggleSleep(); return; }
@@ -111,7 +128,7 @@ function Tile({ tile, theme, events, store, now, chooserOpen, onOpenChooser }) {
   const subtitle = running
     ? `${KIND_LABEL[open.type]} since ${clockTime(open.start_ts)} · tap to end`
     : isWeight
-      ? (last ? weighedLabel(last.start_ts, now) : 'tap to add')
+      ? (growth?.latest ? weighedLabel(growth) : 'tap to add')
       : (reference
         ? `${isSleep && last ? `${KIND_LABEL[last.type].toLowerCase()} ended` : tile.subtitle} ${whenLabel(reference, now)}`
         : 'tap to log');
@@ -175,6 +192,11 @@ function Tile({ tile, theme, events, store, now, chooserOpen, onOpenChooser }) {
         {prediction && !running && (
           <div style={{ fontSize: 11, color: theme.inkFaint, marginTop: 2 }}>
             next ≈ {clockTime(prediction)}
+          </div>
+        )}
+        {weightLine && (
+          <div style={{ fontSize: 11, color: weightLine.tone === 'warn' ? theme.warn : theme.inkFaint, marginTop: 2, fontWeight: weightLine.tone === 'warn' ? 600 : 400 }}>
+            {weightLine.text}
           </div>
         )}
         {bathLine && (
