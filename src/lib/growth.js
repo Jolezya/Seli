@@ -2,7 +2,7 @@
 // moved. Everything here is derived from the weigh-ins plus two facts the
 // parents set once — birth date and sex — so there is no state to go stale.
 
-import { DAY, daysBetween, addDays, localNoon } from './time.js';
+import { DAY, daysBetween, addDays, localNoon, fromDateInput, shortDate } from './time.js';
 import { weighIns } from './weight.js';
 import { zScore, weightAtZ, percentile, ordinal, linesCrossed, MAX_AGE_DAYS, BAND_Z } from './who.js';
 
@@ -187,3 +187,38 @@ export function curveSeries(sex, z, fromDay, toDay, step = 1) {
 }
 
 export { DAY };
+
+/** The chart settings as the card and the tile both read them from prefs. */
+export function growthSettings(prefs = {}, now = Date.now()) {
+  const sex = prefs.sex === 'boy' ? 'boy' : 'girl';
+  const birthTs = fromDateInput(prefs.birthDate) ?? localNoon(now);
+  const dueTs = fromDateInput(prefs.dueDate);
+  return { sex, birthTs, dueTs, correct: Boolean(prefs.correctAge) };
+}
+
+/**
+ * The one-line confirmation after a weigh-in is saved:
+ * "5,420 g · 66th percentile · +19 g/day since 31 Aug". Built from the
+ * events as they were BEFORE the save plus the new reading, so the caller
+ * need not wait for state to settle.
+ */
+export function weighInLine(events, settings, ts, grams, now = Date.now()) {
+  const g = Math.round(Number(grams));
+  const day = localNoon(ts);
+  const before = placedWeighIns(events, settings.birthTs, settings.sex, settings.correct ? prematurity(settings.birthTs, settings.dueTs).earlyDays : 0)
+    .filter((w) => localNoon(w.start_ts) !== day);
+  const previous = [...before].reverse().find((w) => w.start_ts < day) || null;
+  const earlyDays = settings.correct ? prematurity(settings.birthTs, settings.dueTs).earlyDays : 0;
+  const chartDay = ageInDays(settings.birthTs, day) - earlyDays;
+  const z = chartDay >= 0 ? zScore(settings.sex, chartDay, g) : null;
+  const parts = [`${g.toLocaleString()} g`];
+  if (z != null) parts.push(`${ordinal(percentile(z))} percentile${earlyDays ? ' (corrected)' : ''}`);
+  if (previous) {
+    const days = daysBetween(previous.start_ts, day);
+    if (days > 0) {
+      const perDay = Math.round((g - previous.amount) / days);
+      parts.push(`${perDay >= 0 ? '+' : '−'}${Math.abs(perDay)} g/day since ${shortDate(previous.start_ts)}`);
+    }
+  }
+  return parts.join(' · ');
+}

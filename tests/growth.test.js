@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { growthSummary, bandSeries, curveSeries, dayCurveReaches, trendOf, prematurity } from '../src/lib/growth.js';
+import { growthSummary, bandSeries, curveSeries, dayCurveReaches, trendOf, prematurity, weighInLine, growthSettings } from '../src/lib/growth.js';
 import { weightAtZ } from '../src/lib/who.js';
 
 const noon = (y, m, d) => new Date(y, m - 1, d, 12, 0, 0, 0).getTime();
@@ -130,5 +130,23 @@ describe('corrected age for an early birth', () => {
     expect(corr.milestones.doubledProjected.ts).toBeGreaterThan(now);
     expect(corr.milestones.doubledProjected.ageDays).toBe(corr.milestones.doubledProjected.ageDays);
     expect(Math.abs(corr.milestones.doubledProjected.ts - plain.milestones.doubledProjected.ts)).toBeLessThan(30 * 24 * 3600e3);
+  });
+});
+
+describe('weighInLine', () => {
+  const settings = { sex: 'girl', birthTs: BIRTH, dueTs: noon(2026, 7, 9), correct: true };
+  const events = [w('a', BIRTH, 3035), w('b', noon(2026, 8, 31), 5160)];
+  it('says the weight, the percentile and the gain since the previous weigh-in', () => {
+    const line = weighInLine(events, settings, noon(2026, 9, 14), 5580);
+    expect(line).toMatch(/^5,580 g · \d+(st|nd|rd|th) percentile \(corrected\) · \+30 g\/day since/);
+  });
+  it('ignores a same-day reading being corrected, and copes with the first weigh-in', () => {
+    expect(weighInLine(events, settings, noon(2026, 8, 31), 5200)).toMatch(/since/);
+    expect(weighInLine([], settings, noon(2026, 8, 31), 5200)).not.toMatch(/since/);
+  });
+  it('reads settings from prefs with safe defaults', () => {
+    const s = growthSettings({ birthDate: '2026-06-22', sex: 'girl', dueDate: '2026-07-09', correctAge: true });
+    expect(s).toMatchObject({ sex: 'girl', correct: true });
+    expect(growthSettings({}).sex).toBe('girl');
   });
 });

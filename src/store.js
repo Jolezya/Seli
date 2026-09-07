@@ -16,6 +16,7 @@ import { localNoon, dayKey } from './lib/time.js';
 import { weighInOnDay, clampGain, DEFAULT_GAIN } from './lib/weight.js';
 import { HOUSEHOLD } from './lib/config.js';
 import { normalizeBackup } from './lib/backup.js';
+import { growthSettings, weighInLine } from './lib/growth.js';
 
 const DEFAULT_PREFS = {
   gain: DEFAULT_GAIN,
@@ -228,9 +229,12 @@ export function useStore() {
     const amount = Math.round(Number(grams));
     if (!Number.isFinite(amount) || amount <= 0) return null;
     const existing = weighInOnDay(events, ts);
+    // Say what the reading means the moment it is saved, so nobody has to
+    // scroll to the chart to find out.
+    showToast(weighInLine(events, growthSettings(prefs, Date.now()), ts, amount), null, 8000);
     if (existing) return update(existing.id, { amount, start_ts: ts });
     return log('weight', { start_ts: ts, amount });
-  }, [events, log, update]);
+  }, [events, prefs, log, update, showToast]);
 
   // ---- Data safety ------------------------------------------------------
 
