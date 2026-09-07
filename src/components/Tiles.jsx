@@ -11,6 +11,7 @@ import { timeAgo, clockTime, whenLabel, daysBetween } from '../lib/time.js';
 import { SLEEP_TYPES, openSleep, lastSleep, lastOfType } from '../lib/events.js';
 import { predictNext } from '../lib/analytics.js';
 import { formatGrams } from '../lib/weight.js';
+import { bathSchedule, bathHint, DEFAULT_BATH_DAYS } from '../lib/bath.js';
 
 /**
  * Six tiles, 3 rows x 2. `types` is what a tile reads; `mode` is what a tap
@@ -88,7 +89,10 @@ function Tile({ tile, theme, events, store, now, chooserOpen, onOpenChooser }) {
   // The moment this tile counts from: when a sleep ENDED, or when a point
   // event happened.
   const reference = last ? (last.end_ts ?? last.start_ts) : null;
-  const prediction = tile.key === 'nurse' || isWeight ? null : predictNext(events, tile.types, now);
+  const isBath = tile.key === 'bath';
+  const prediction = tile.key === 'nurse' || isWeight || isBath ? null : predictNext(events, tile.types, now);
+  // Baths run to a schedule, not a rhythm, so the third line is the schedule.
+  const bathLine = isBath ? bathHint(bathSchedule(events, store.prefs?.bathDays ?? DEFAULT_BATH_DAYS, now)) : null;
 
   const handleTap = () => {
     if (isSleep) { store.toggleSleep(); return; }
@@ -171,6 +175,11 @@ function Tile({ tile, theme, events, store, now, chooserOpen, onOpenChooser }) {
         {prediction && !running && (
           <div style={{ fontSize: 11, color: theme.inkFaint, marginTop: 2 }}>
             next ≈ {clockTime(prediction)}
+          </div>
+        )}
+        {bathLine && (
+          <div style={{ fontSize: 11, color: bathLine.startsWith('bath day') || bathLine.startsWith('missed') ? accent : theme.inkFaint, marginTop: 2, fontWeight: bathLine.startsWith('bath day') ? 600 : 400 }}>
+            {bathLine}
           </div>
         )}
       </div>

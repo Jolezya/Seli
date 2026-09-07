@@ -8,6 +8,7 @@ import { categoryColor, categoryTint } from '../theme.js';
 import { clockTime, formatDuration, MINUTE } from '../lib/time.js';
 import { eventsOnDay, openSession, totalDurationOnDay } from '../lib/events.js';
 import { msLeftInDay, leftLabel, taskTone } from '../lib/tasks.js';
+import { bathSchedule, toggleDay, WEEKDAYS, DEFAULT_BATH_DAYS } from '../lib/bath.js';
 
 export const CARERS = ['Kay', 'Maren', 'Both'];
 export const TUMMY_GOALS = [10, 15, 20, 30];
@@ -28,8 +29,14 @@ export default function TaskCard({ theme, events, store, now }) {
   const tummyOpen = openSession(events, 'tummy');
   const tummyDone = tummyMin >= goal;
 
-  const doneCount = [vitd, massage, exercise].filter(Boolean).length + (tummyDone ? 1 : 0);
-  const allDone = doneCount === 4;
+  // Bath is a fifth task on scheduled days only, so the other five days stay
+  // uncluttered. The count follows.
+  const bathDays = store.prefs.bathDays ?? DEFAULT_BATH_DAYS;
+  const bath = bathSchedule(events, bathDays, now);
+  const total = 4 + (bath.isBathDay ? 1 : 0);
+  const doneCount = [vitd, massage, exercise].filter(Boolean).length + (tummyDone ? 1 : 0)
+    + (bath.isBathDay && bath.doneToday ? 1 : 0);
+  const allDone = doneCount === total;
 
   // Gentle escalation, and one countdown for the whole card: every task
   // shares the same deadline (local midnight, when the list resets), so a
@@ -49,7 +56,7 @@ export default function TaskCard({ theme, events, store, now }) {
     return (
       <Card theme={theme} style={{ padding: '12px 16px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: theme.good, fontWeight: 600 }}>
-          <Emoji char="✅" size={16} /> All four daily tasks done
+          <Emoji char="✅" size={16} /> All {total === 5 ? 'five' : 'four'} daily tasks done
         </div>
       </Card>
     );
@@ -61,7 +68,7 @@ export default function TaskCard({ theme, events, store, now }) {
         theme={theme}
         right={(
           <span style={{ fontSize: 11, fontWeight: 700, color: headerColor, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
-            {doneCount}/4 done · {leftLabel(left)}
+            {doneCount}/{total} done · {leftLabel(left)}
           </span>
         )}
       >
@@ -148,6 +155,20 @@ export default function TaskCard({ theme, events, store, now }) {
             )}
         </TaskRow>
 
+        {/* 5. Bath, on its scheduled days. Logs the same event the tile logs. */}
+        {bath.isBathDay && (
+          <TaskRow theme={theme} emoji="🛁" label="Bath" category="bath" done={Boolean(bath.doneToday)}>
+            {bath.doneToday
+              ? <Done theme={theme}>Bath done {clockTime(bath.doneToday.start_ts)}</Done>
+              : (
+                <>
+                  {nudge && <Hint theme={theme}>not yet today</Hint>}
+                  <Button theme={theme} onClick={() => { haptic(); store.logPoint('bath'); }} style={{ padding: '6px 12px' }}>Done</Button>
+                </>
+              )}
+          </TaskRow>
+        )}
+
         <TaskRow theme={theme} emoji="🤸‍♀️" label="Exercise" category="exercise" done={Boolean(exercise)}>
           {exercise
             ? <Done theme={theme}>Exercise done {clockTime(exercise.start_ts)}</Done>
@@ -159,7 +180,38 @@ export default function TaskCard({ theme, events, store, now }) {
             )}
         </TaskRow>
       </div>
+
+      <BathDays theme={theme} days={bathDays} onToggle={(d) => store.setPrefs({ bathDays: toggleDay(bathDays, d) })} />
     </Card>
+  );
+}
+
+/** The bath schedule: seven small day chips, the scheduled ones filled. */
+function BathDays({ theme, days, onToggle }) {
+  const accent = categoryColor(theme, 'bath');
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 12, flexWrap: 'wrap' }}>
+      <span style={{ fontSize: 11, color: theme.inkSoft, marginRight: 2 }}>Bath days</span>
+      {WEEKDAYS.map((w) => {
+        const on = days.includes(w.day);
+        return (
+          <button
+            key={w.day}
+            type="button"
+            onClick={() => { haptic(); onToggle(w.day); }}
+            aria-label={`${w.label}${on ? ', bath day' : ''}`}
+            aria-pressed={on}
+            style={{
+              appearance: 'none', width: 26, height: 26, borderRadius: 999, padding: 0, cursor: 'pointer',
+              border: `1px solid ${on ? accent : theme.line}`,
+              background: on ? accent : 'transparent',
+              color: on ? (theme.name === 'night' ? '#0C0C11' : '#FFFFFF') : theme.inkSoft,
+              fontSize: 11, fontWeight: 700, lineHeight: 1,
+            }}
+          >{w.short}</button>
+        );
+      })}
+    </div>
   );
 }
 

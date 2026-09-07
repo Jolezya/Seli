@@ -34,6 +34,8 @@ const DEFAULT_PREFS = {
   // for the correction, so it is on. The card lets them turn it off.
   dueDate: '2026-07-09',
   correctAge: true,
+  // Scheduled bath days, JS weekday numbers (0 = Sunday). Wed and Sat.
+  bathDays: [3, 6],
 };
 
 /** Periodic safety-net flush + pull, in case realtime or a retry was missed. */
