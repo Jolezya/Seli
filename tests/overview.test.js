@@ -53,6 +53,13 @@ describe('daily totals', () => {
     expect(rows[1].tracked).toBe(true);
     expect(rows[2].isToday).toBe(true);
   });
+
+  it('does not let a backdated weigh-in turn empty weeks into tracked days', () => {
+    const withWeight = [...events, ev('weight', at(1, 12) - 40 * DAY, { amount: 3035 })];
+    const rows = dailyTotals(withWeight, 30, now);
+    expect(rows.filter((r) => r.tracked).length).toBe(2);
+    expect(baseline(rows).ready).toBe(false);
+  });
 });
 
 describe('baseline ("usually")', () => {

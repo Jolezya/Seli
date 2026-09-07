@@ -43,7 +43,7 @@ function formatValue(metric, value) {
 }
 
 /** A period as the picker holds it. */
-const DEFAULT_A = { kind: '24h', date: null };
+const DEFAULT_A = { kind: 'today', date: null };
 const DEFAULT_B = { kind: 'yesterday', date: null };
 
 function periodLabel(period, range, now) {

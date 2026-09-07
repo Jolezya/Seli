@@ -7,7 +7,7 @@
 // and the UI says so plainly.
 
 import { DAY, HOUR, MINUTE, dayKey, lastNDays, localHour, startOfLocalDay, addDays } from './time.js';
-import { FEED_TYPES, durationOf, eventsOnDay } from './events.js';
+import { FEED_TYPES, SLEEP_TYPES, durationOf, eventsOnDay } from './events.js';
 
 /** Metrics the comparison chart can plot. */
 export const METRICS = [
@@ -272,7 +272,6 @@ export function overlapMs(event, from, to, now = Date.now()) {
   return Math.max(0, Math.min(end, to) - Math.max(start, from));
 }
 
-const SLEEP_TYPES = ['nap', 'night'];
 
 /** Totals for an arbitrary window [from, to). */
 export function windowTotals(events, from, to, now = Date.now()) {
@@ -302,28 +301,35 @@ export function windowTotals(events, from, to, now = Date.now()) {
   return t;
 }
 
-/** Local day-start of the earliest event, or null when nothing is logged. */
+/**
+ * The everyday things: what a day of using the app looks like. A weigh-in
+ * dated at birth or a note does not make that day "tracked" — only these do.
+ */
+const ACTIVITY_TYPES = new Set([...FEED_TYPES, ...SLEEP_TYPES, 'wet', 'poop']);
+
+/** Local day-start of the earliest everyday activity, or null when nothing is logged. */
 export function firstTrackedDay(events) {
   let min = Infinity;
-  for (const e of events) if (e.start_ts < min) min = e.start_ts;
+  for (const e of events) if (ACTIVITY_TYPES.has(e.type) && e.start_ts < min) min = e.start_ts;
   return Number.isFinite(min) ? startOfLocalDay(min) : null;
 }
 
 /**
- * One row per local day, oldest first, ending today. `tracked` marks days on
- * or after the first logged event — days before that are not "zero feeds",
- * they are "not yet using the app", and must not drag averages down.
+ * One row per local day, oldest first, ending today. `tracked` marks a day
+ * with at least one everyday activity logged. A day with none is not "zero
+ * feeds", it is "not logged" — a backdated weigh-in must not turn the weeks
+ * before the app was in use into empty days that drag the averages down.
  */
 export function dailyTotals(events, days, now = Date.now()) {
-  const first = firstTrackedDay(events);
   return lastNDays(days, now).map((dayTs) => {
     const end = addDays(dayTs, 1);
+    const totals = windowTotals(events, dayTs, end, now);
     return {
       dayTs,
       key: dayKey(dayTs),
-      tracked: first != null && dayTs >= first,
+      tracked: totals.any,
       isToday: dayKey(dayTs) === dayKey(now),
-      ...windowTotals(events, dayTs, end, now),
+      ...totals,
     };
   });
 }
