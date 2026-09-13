@@ -134,3 +134,15 @@ describe('matchEvents — the clear-data predicate', () => {
     expect(matchEvents(rows)).toHaveLength(5);
   });
 });
+
+describe('poop size', async () => {
+  const { poopSize, POOP_SIZES } = await import('../src/lib/events.js');
+  it('reads only the two known sizes, and only on poop rows', () => {
+    expect(POOP_SIZES).toEqual(['small', 'full']);
+    expect(poopSize({ type: 'poop', side: 'small' })).toBe('small');
+    expect(poopSize({ type: 'poop', side: 'full' })).toBe('full');
+    expect(poopSize({ type: 'poop', side: null })).toBeNull();
+    expect(poopSize({ type: 'poop', side: 'Kay' })).toBeNull();
+    expect(poopSize({ type: 'vitd', side: 'full' })).toBeNull();
+  });
+});

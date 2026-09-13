@@ -191,11 +191,11 @@ function resolve(period, now) {
 /** The baseline that is fair for this period: full-day, or by-this-time. */
 function usualFor(events, range, usual, now) {
   if (!range.partial || range.rolling) return usual;
-  return usualByElapsed(events, range.to - range.from, now);
+  return usualByElapsed(events, range.elapsedTo - range.from, now);
 }
 
 function stripProps(range) {
-  if (range.rolling) return { leftLabel: '24h ago', rightLabel: 'now', axisTo: range.to };
+  if (range.rolling) return { leftLabel: '24h ago', rightLabel: 'now', axisTo: range.elapsedTo };
   return { leftLabel: '00:00', rightLabel: '24:00', axisTo: range.dayEnd };
 }
 
@@ -447,17 +447,21 @@ function Timeline({ theme, events, from, to, now, leftLabel = '24h ago', rightLa
 
         {/* Diapers as ticks: wet above the lane, poop below, so a change with
             both never hides one behind the other. */}
-        {data.diapers.map((d) => (
-          <g key={d.id}>
-            <rect
-              x={x(d.ts) - 1} y={d.type === 'wet' ? laneDiaper - 9 : laneDiaper + 1}
-              width={2} height={8} rx={1} fill={d.type === 'wet' ? wetColor : poopColor}
-            />
-            <rect x={x(d.ts) - 6} y={laneDiaper - 12} width={12} height={24} fill="transparent">
-              <title>{`${d.type === 'wet' ? 'Wet' : 'Poop'} · ${clockTime(d.ts)}`}</title>
-            </rect>
-          </g>
-        ))}
+        {data.diapers.map((d) => {
+          // A small poop is a shorter tick: the size is the point of logging it.
+          const h = d.type === 'poop' && d.size === 'small' ? 4 : 8;
+          return (
+            <g key={d.id}>
+              <rect
+                x={x(d.ts) - 1} y={d.type === 'wet' ? laneDiaper - 9 : laneDiaper + 1}
+                width={2} height={h} rx={1} fill={d.type === 'wet' ? wetColor : poopColor}
+              />
+              <rect x={x(d.ts) - 6} y={laneDiaper - 12} width={12} height={24} fill="transparent">
+                <title>{`${d.type === 'wet' ? 'Wet' : `Poop${d.size ? ` (${d.size})` : ''}`} · ${clockTime(d.ts)}`}</title>
+              </rect>
+            </g>
+          );
+        })}
 
         {/* Now — only when it falls inside the axis. */}
         {nowInside && (

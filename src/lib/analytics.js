@@ -7,7 +7,7 @@
 // and the UI says so plainly.
 
 import { DAY, HOUR, MINUTE, dayKey, lastNDays, localHour, startOfLocalDay, addDays } from './time.js';
-import { FEED_TYPES, SLEEP_TYPES, durationOf, eventsOnDay } from './events.js';
+import { FEED_TYPES, SLEEP_TYPES, durationOf, eventsOnDay, poopSize } from './events.js';
 
 /** Metrics the comparison chart can plot. */
 export const METRICS = [
@@ -369,7 +369,7 @@ export function timelineData(events, from, to, now = Date.now()) {
       if (end > start) sleeps.push({ id: e.id, start, end, type: e.type, open: e.end_ts == null });
     } else if (e.start_ts >= from && e.start_ts < to) {
       if (FEED_TYPES.includes(e.type)) feeds.push({ id: e.id, ts: e.start_ts, type: e.type, amount: e.amount });
-      else if (e.type === 'wet' || e.type === 'poop') diapers.push({ id: e.id, ts: e.start_ts, type: e.type });
+      else if (e.type === 'wet' || e.type === 'poop') diapers.push({ id: e.id, ts: e.start_ts, type: e.type, size: poopSize(e) });
     }
   }
   sleeps.sort((a, b) => a.start - b.start);
@@ -433,14 +433,19 @@ export function weekOverWeek(events, now = Date.now()) {
  *   'date'      → the given local day, midnight to midnight (partial if today)
  */
 export function periodRange(kind, now = Date.now(), dateTs = null) {
-  if (kind === '24h') return { from: now - DAY, to: now, partial: true, rolling: true };
+  // `to` bounds what is COUNTED and, for a day still in progress, runs to the
+  // end of the day: the render clock ticks once a minute, and an entry logged
+  // since the last tick must not vanish from "today" until the next one.
+  // `elapsedTo` is how far the period has actually run — what "usually by
+  // now" and the strip's now-line need.
+  if (kind === '24h') return { from: now - DAY, to: now + MINUTE, elapsedTo: now, partial: true, rolling: true };
   let day0;
   if (kind === 'today') day0 = startOfLocalDay(now);
   else if (kind === 'yesterday') day0 = addDays(startOfLocalDay(now), -1);
   else day0 = startOfLocalDay(dateTs ?? now);
   const end = addDays(day0, 1);
   const partial = now < end;
-  return { from: day0, to: partial ? Math.max(now, day0) : end, dayEnd: end, partial, rolling: false };
+  return { from: day0, to: end, elapsedTo: partial ? Math.max(now, day0) : end, dayEnd: end, partial, rolling: false };
 }
 
 /**

@@ -174,7 +174,8 @@ describe('period ranges and the by-this-time baseline', () => {
     const now = at(4, 7, 15);   // 4 Sept, 07:15
     const today = periodRange('today', now);
     expect(today.from).toBe(at(4, 0));
-    expect(today.to).toBe(now);
+    expect(today.to).toBe(at(5, 0));          // counts to the end of the day…
+    expect(today.elapsedTo).toBe(now);        // …but has only run this far
     expect(today.partial).toBe(true);
     expect(today.dayEnd).toBe(at(5, 0));
 
@@ -189,7 +190,8 @@ describe('period ranges and the by-this-time baseline', () => {
 
     const rolling = periodRange('24h', now);
     expect(rolling.rolling).toBe(true);
-    expect(rolling.to - rolling.from).toBe(DAY);
+    expect(rolling.elapsedTo - rolling.from).toBe(DAY);
+    expect(rolling.to).toBeGreaterThan(now);   // room for an entry logged since the last clock tick
   });
 
   it('compares a partial day against what earlier days had reached by the same time', () => {

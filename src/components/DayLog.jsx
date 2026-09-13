@@ -8,7 +8,7 @@ import {
   dayLabel, clockTime, addDays, startOfLocalDay, formatDuration,
   toDatetimeLocal, fromDatetimeLocal, MINUTE, DAY,
 } from '../lib/time.js';
-import { eventsOnDay, isTimedType, durationOf, ALL_TYPES, matchEvents } from '../lib/events.js';
+import { eventsOnDay, isTimedType, durationOf, ALL_TYPES, matchEvents, poopSize, POOP_SIZES } from '../lib/events.js';
 import { toCSV, download, stamp, readFile } from '../lib/files.js';
 
 const LABELS = {
@@ -57,7 +57,7 @@ export default function DayLog({ theme, events, store, now }) {
         {stats.napMin > 0 && <Stat theme={theme}>{stats.napMin}m nap time</Stat>}
         {stats.nightMin > 0 && <Stat theme={theme}>{formatDuration(stats.nightMin * MINUTE)} night sleep</Stat>}
         <Stat theme={theme}>{stats.wet} wet</Stat>
-        <Stat theme={theme}>{stats.poop} poop</Stat>
+        <Stat theme={theme}>{stats.poop} poop{stats.poopSmall > 0 ? ` (${stats.poopSmall} small)` : ''}</Stat>
       </div>
 
       <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
@@ -157,7 +157,8 @@ function Entry({ theme, event, now, onEdit }) {
   const details = [];
   if (event.type === 'bottle' && event.amount != null) details.push(`${event.amount} ml`);
   if (event.type === 'weight' && event.amount != null) details.push(`${event.amount} g`);
-  if (event.side) details.push(`by ${event.side}`);
+  if (event.type === 'poop') { if (poopSize(event)) details.push(poopSize(event)); }
+  else if (event.side) details.push(`by ${event.side}`);
   if (timed) details.push(ongoing ? 'in progress' : formatDuration(durationOf(event, now)));
   if (event.descr) details.push(event.descr);
 
@@ -191,6 +192,7 @@ function EditDialog({ theme, event, store, onClose }) {
   const [end, setEnd] = useState(event.end_ts ? toDatetimeLocal(event.end_ts) : '');
   const [amount, setAmount] = useState(event.amount ?? '');
   const [descr, setDescr] = useState(event.descr ?? '');
+  const [size, setSize] = useState(poopSize(event));
   const meta = LABELS[event.type] || { emoji: '•', name: event.type };
   const timed = isTimedType(event.type);
   const hasAmount = event.type === 'bottle' || event.type === 'weight';
@@ -200,6 +202,7 @@ function EditDialog({ theme, event, store, onClose }) {
     if (timed) patch.end_ts = end ? fromDatetimeLocal(end) : null;
     if (hasAmount) patch.amount = amount === '' ? null : Number(amount);
     if (event.type === 'note') patch.descr = descr;
+    if (event.type === 'poop') patch.side = size;
     store.update(event.id, patch);
     onClose();
   };
@@ -249,6 +252,19 @@ function EditDialog({ theme, event, store, onClose }) {
             </Muted>
             <input type="number" inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value)} style={field} />
           </label>
+        )}
+
+        {event.type === 'poop' && (
+          <div style={{ marginBottom: 10 }}>
+            <Muted theme={theme} size={11} style={{ marginBottom: 4 }}>Size</Muted>
+            <div style={{ display: 'flex', gap: 6 }}>
+              {POOP_SIZES.map((sz) => (
+                <Chip key={sz} theme={theme} accent={categoryColor(theme, 'poop')} active={size === sz} onClick={() => setSize(size === sz ? null : sz)}>
+                  {sz === 'small' ? 'Small' : 'Full'}
+                </Chip>
+              ))}
+            </div>
+          </div>
         )}
 
         {event.type === 'note' && (
@@ -466,8 +482,9 @@ export function dayStats(dayEvents, now = Date.now()) {
   );
   const nurse = count('nurse');
   const bottle = count('bottle');
+  const poopSmall = dayEvents.filter((e) => poopSize(e) === 'small').length;
   return {
-    nurse, bottle, feeds: nurse + bottle,
+    nurse, bottle, feeds: nurse + bottle, poopSmall,
     napMin: minutes('nap'), nightMin: minutes('night'), tummyMin: minutes('tummy'),
     wet: count('wet'), poop: count('poop'),
   };
