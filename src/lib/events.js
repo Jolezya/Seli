@@ -16,6 +16,16 @@ export const FEED_TYPES = ['nurse', 'bottle'];
 export const SLEEP_TYPES = ['night', 'nap'];
 
 /**
+ * Poop size, kept in the spare `side` text column (the one that holds who
+ * gave the vitamin D). A tap logs 'full', a hold logs 'small'; older rows
+ * have no size and read as unsized.
+ */
+export const POOP_SIZES = ['small', 'full'];
+export function poopSize(event) {
+  return event?.type === 'poop' && POOP_SIZES.includes(event.side) ? event.side : null;
+}
+
+/**
  * Night or nap, by the local time a sleep STARTS.
  *   21:00 – 06:00  → night
  *   06:01 – 20:59  → nap

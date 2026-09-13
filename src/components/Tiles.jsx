@@ -8,7 +8,7 @@ import React, { useState } from 'react';
 import { Pressable, IconWell, Eyebrow, haptic, surfaceStyle } from '../ui.jsx';
 import { categoryColor, categoryTint } from '../theme.js';
 import { timeAgo, clockTime, whenLabel, daysBetween } from '../lib/time.js';
-import { SLEEP_TYPES, openSleep, lastSleep, lastOfType } from '../lib/events.js';
+import { SLEEP_TYPES, openSleep, lastSleep, lastOfType, poopSize } from '../lib/events.js';
 import { predictNext } from '../lib/analytics.js';
 import { formatGrams } from '../lib/weight.js';
 import { bathSchedule, bathHint, DEFAULT_BATH_DAYS } from '../lib/bath.js';
@@ -111,11 +111,14 @@ function Tile({ tile, theme, events, store, now, chooserOpen, onOpenChooser }) {
           : null)
     : null;
 
+  const isPoop = tile.key === 'poop';
   const handleTap = () => {
     if (isSleep) { store.toggleSleep(); return; }
     if (isWeight) { onOpenChooser(!chooserOpen); return; }
-    store.logPoint(tile.key);
+    // A tap is the ordinary full diaper; the hold below is the small one.
+    store.logPoint(tile.key, isPoop ? { side: 'full' } : {});
   };
+  const handleHold = isPoop ? () => store.logPoint('poop', { side: 'small' }) : undefined;
 
   // Weight inverts the tile: the grams are the big number, because the value
   // is what you want at a glance, and "when" moves to the subtitle.
@@ -130,12 +133,13 @@ function Tile({ tile, theme, events, store, now, chooserOpen, onOpenChooser }) {
     : isWeight
       ? (growth?.latest ? weighedLabel(growth) : 'tap to add')
       : (reference
-        ? `${isSleep && last ? `${KIND_LABEL[last.type].toLowerCase()} ended` : tile.subtitle} ${whenLabel(reference, now)}`
+        ? `${isSleep && last ? `${KIND_LABEL[last.type].toLowerCase()} ended` : tile.subtitle} ${whenLabel(reference, now)}${isPoop && poopSize(last) ? ` · ${poopSize(last)}` : ''}`
         : 'tap to log');
 
   return (
     <Pressable
       onClick={handleTap}
+      onLongPress={handleHold}
       ariaLabel={`${tile.label}: ${value}`}
       style={{
         ...surfaceStyle(theme, { radius: 24 }),
@@ -198,6 +202,9 @@ function Tile({ tile, theme, events, store, now, chooserOpen, onOpenChooser }) {
           <div style={{ fontSize: 11, color: weightLine.tone === 'warn' ? theme.warn : theme.inkFaint, marginTop: 2, fontWeight: weightLine.tone === 'warn' ? 600 : 400 }}>
             {weightLine.text}
           </div>
+        )}
+        {isPoop && !running && (
+          <div style={{ fontSize: 11, color: theme.inkFaint, marginTop: 2 }}>tap = full · hold = small</div>
         )}
         {bathLine && (
           <div style={{ fontSize: 11, color: bathLine.startsWith('bath day') || bathLine.startsWith('missed') ? accent : theme.inkFaint, marginTop: 2, fontWeight: bathLine.startsWith('bath day') ? 600 : 400 }}>
