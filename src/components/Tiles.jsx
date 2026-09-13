@@ -7,9 +7,9 @@
 import React, { useState } from 'react';
 import { Pressable, IconWell, Eyebrow, haptic, surfaceStyle } from '../ui.jsx';
 import { categoryColor, categoryTint } from '../theme.js';
-import { timeAgo, clockTime, whenLabel, daysBetween } from '../lib/time.js';
+import { timeAgo, clockTime, whenLabel, daysBetween, formatDuration, MINUTE, DAY } from '../lib/time.js';
 import { SLEEP_TYPES, openSleep, lastSleep, lastOfType, poopSize } from '../lib/events.js';
-import { predictNext } from '../lib/analytics.js';
+import { predictNext, windowTotals } from '../lib/analytics.js';
 import { formatGrams } from '../lib/weight.js';
 import { bathSchedule, bathHint, DEFAULT_BATH_DAYS } from '../lib/bath.js';
 import { growthSummary, growthSettings } from '../lib/growth.js';
@@ -26,7 +26,7 @@ import { shortDate } from '../lib/time.js';
 export const TILES = [
   { key: 'nurse',  types: ['nurse'],   label: 'Nursing',      emoji: '🤱', category: 'nurse',  mode: 'point',  subtitle: 'last feed',   canUpdate: true },
   { key: 'weight', types: ['weight'],  label: 'Weight',       emoji: '⚖️', category: 'weight', mode: 'weight' },
-  { key: 'sleep',  types: SLEEP_TYPES, label: 'Sleep',        emoji: '😴', category: 'night',  mode: 'sleep',  subtitle: 'last sleep',  canUpdate: true },
+  { key: 'sleep',  types: SLEEP_TYPES, label: 'Sleep · 24h',  emoji: '😴', category: 'night',  mode: 'sleep',  subtitle: 'last sleep',  canUpdate: true },
   { key: 'bath',   types: ['bath'],    label: 'Bath',         emoji: '🛁', category: 'bath',   mode: 'point',  subtitle: 'last bath', days: true },
   { key: 'wet',    types: ['wet'],     label: 'Wet diapers',  emoji: '💧', category: 'wet',    mode: 'point',  subtitle: 'last change' },
   { key: 'poop',   types: ['poop'],    label: 'Poop diapers', emoji: '💩', category: 'poop',   mode: 'point',  subtitle: 'last change' },
@@ -120,10 +120,12 @@ function Tile({ tile, theme, events, store, now, chooserOpen, onOpenChooser }) {
     store.logPoint(tile.key, isPoop ? { side: 'full' } : {});
   };
 
-  // Weight inverts the tile: the grams are the big number, because the value
-  // is what you want at a glance, and "when" moves to the subtitle.
-  const value = running
-    ? 'Sleeping'
+  // Weight and sleep invert the tile: the value is the big number — grams,
+  // or sleep in the last 24 hours (clipped to the window, a sleep still
+  // going counted up to now) — and "when" moves to the subtitle.
+  const sleep24 = isSleep ? windowTotals(events, now - DAY, now, now).sleepMin : 0;
+  const value = isSleep
+    ? (last || running ? formatDuration(sleep24 * MINUTE) : 'never')
     : isWeight
       ? (last ? formatGrams(last.amount) : 'never')
       : (reference ? (tile.days ? daysAgo(reference, now) : timeAgo(reference, now)) : 'never');
@@ -135,6 +137,12 @@ function Tile({ tile, theme, events, store, now, chooserOpen, onOpenChooser }) {
       : (reference
         ? `${isSleep && last ? `${KIND_LABEL[last.type].toLowerCase()} ended` : tile.subtitle} ${whenLabel(reference, now)}${isPoop && poopSize(last) ? ` · ${poopSize(last)}` : ''}`
         : 'tap to log');
+
+  // Sleep's third line: how long she has been awake, then the guess at the
+  // next sleep. The prediction alone stays on the other tiles.
+  const awakeLine = isSleep && !running && reference
+    ? `awake ${timeAgo(reference, now).replace(' ago', '')}${prediction ? ` · next ≈ ${clockTime(prediction)}` : ''}`
+    : null;
 
   return (
     <Pressable
@@ -194,7 +202,9 @@ function Tile({ tile, theme, events, store, now, chooserOpen, onOpenChooser }) {
           fontSize: 11.5, color: theme.inkSoft, whiteSpace: 'nowrap',
           textOverflow: 'ellipsis', overflow: 'hidden', lineHeight: 1.35,
         }}>{subtitle}</div>
-        {prediction && !running && (
+        {awakeLine ? (
+          <div style={{ fontSize: 11, color: theme.inkFaint, marginTop: 2 }}>{awakeLine}</div>
+        ) : prediction && !running && (
           <div style={{ fontSize: 11, color: theme.inkFaint, marginTop: 2 }}>
             next ≈ {clockTime(prediction)}
           </div>
