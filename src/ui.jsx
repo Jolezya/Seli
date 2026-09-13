@@ -2,7 +2,7 @@
 // tokens — no CSS framework, because the look is custom and a component library
 // would only get in the way (spec §2, §11).
 
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback } from 'react';
 import { categoryTint } from './theme.js';
 
 export const MAX_WIDTH = 560;
@@ -120,72 +120,31 @@ export function Button({ theme, onClick, children, tone = 'plain', style, disabl
  * stays on the compositor at 60fps, and skipped entirely under
  * prefers-reduced-motion (spec §11).
  */
-/** How long a finger must stay down for a press to count as a hold. */
-export const LONG_PRESS_MS = 500;
-/** A finger that drifts further than this is scrolling, not holding. */
-const LONG_PRESS_SLOP_PX = 8;
-
-/**
- * A tappable surface with an optional hold gesture. A hold fires after
- * LONG_PRESS_MS with a longer buzz, and the click the browser sends on
- * release is swallowed so a hold never also taps. Moving the finger cancels
- * the hold, so scrolling past the grid logs nothing.
- */
-export function Pressable({ children, onClick, onLongPress, style, scale = 0.965, ariaLabel, ...rest }) {
+/** A tappable surface. Never text-selectable: a slow press must not open the copy menu. */
+export function Pressable({ children, onClick, style, scale = 0.965, ariaLabel, ...rest }) {
   const [pressed, setPressed] = useState(false);
+  const release = useCallback(() => setPressed(false), []);
   const reduced = prefersReducedMotion();
-  const hold = useRef({ timer: null, fired: false, x: 0, y: 0 });
-
-  const clearHold = useCallback(() => {
-    if (hold.current.timer) { clearTimeout(hold.current.timer); hold.current.timer = null; }
-  }, []);
-  const release = useCallback(() => { setPressed(false); clearHold(); }, [clearHold]);
-
-  const down = (e) => {
-    setPressed(true);
-    if (!onLongPress) return;
-    hold.current.fired = false;
-    hold.current.x = e.clientX;
-    hold.current.y = e.clientY;
-    clearHold();
-    hold.current.timer = setTimeout(() => {
-      hold.current.timer = null;
-      hold.current.fired = true;
-      setPressed(false);
-      haptic(35);
-      onLongPress();
-    }, LONG_PRESS_MS);
-  };
-  const move = (e) => {
-    if (!hold.current.timer) return;
-    if (Math.abs(e.clientX - hold.current.x) > LONG_PRESS_SLOP_PX || Math.abs(e.clientY - hold.current.y) > LONG_PRESS_SLOP_PX) clearHold();
-  };
 
   return (
     <div
       role="button"
       tabIndex={0}
       aria-label={ariaLabel}
-      onPointerDown={down}
-      onPointerMove={move}
+      onPointerDown={() => setPressed(true)}
       onPointerUp={release}
       onPointerCancel={release}
       onPointerLeave={release}
-      onContextMenu={onLongPress ? (e) => e.preventDefault() : undefined}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick?.(e); }
       }}
-      onClick={(e) => {
-        // The click that follows a hold is the same gesture, not a second one.
-        if (hold.current.fired) { hold.current.fired = false; return; }
-        haptic();
-        onClick?.(e);
-      }}
+      onClick={(e) => { haptic(); onClick?.(e); }}
       style={{
         cursor: 'pointer',
         WebkitTapHighlightColor: 'transparent',
-        WebkitTouchCallout: onLongPress ? 'none' : undefined,
-        userSelect: onLongPress ? 'none' : undefined,
+        WebkitTouchCallout: 'none',
+        WebkitUserSelect: 'none',
+        userSelect: 'none',
         touchAction: 'manipulation',
         transform: pressed && !reduced ? `scale(${scale})` : 'scale(1)',
         transition: reduced ? 'none' : 'transform 170ms cubic-bezier(0.22, 0.61, 0.36, 1)',
