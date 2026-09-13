@@ -115,10 +115,10 @@ function Tile({ tile, theme, events, store, now, chooserOpen, onOpenChooser }) {
   const handleTap = () => {
     if (isSleep) { store.toggleSleep(); return; }
     if (isWeight) { onOpenChooser(!chooserOpen); return; }
-    // A tap is the ordinary full diaper; the hold below is the small one.
+    // A tap on the poop tile is the ordinary full diaper; the Small pill in
+    // its corner logs the small one.
     store.logPoint(tile.key, isPoop ? { side: 'full' } : {});
   };
-  const handleHold = isPoop ? () => store.logPoint('poop', { side: 'small' }) : undefined;
 
   // Weight inverts the tile: the grams are the big number, because the value
   // is what you want at a glance, and "when" moves to the subtitle.
@@ -139,7 +139,6 @@ function Tile({ tile, theme, events, store, now, chooserOpen, onOpenChooser }) {
   return (
     <Pressable
       onClick={handleTap}
-      onLongPress={handleHold}
       ariaLabel={`${tile.label}: ${value}`}
       style={{
         ...surfaceStyle(theme, { radius: 24 }),
@@ -170,7 +169,9 @@ function Tile({ tile, theme, events, store, now, chooserOpen, onOpenChooser }) {
         <IconWell theme={theme} category={tile.category} char={tile.emoji} />
         {running
           ? <PulseDot color={accent} />
-          : (tile.canUpdate && last && <UpdatePill theme={theme} accent={accent} onTap={() => store.bumpLast(tile.key)} />)}
+          : isPoop
+            ? <ActionPill theme={theme} accent={accent} label="Small" title="Log a small poop" onTap={() => store.logPoint('poop', { side: 'small' })} />
+            : (tile.canUpdate && last && <ActionPill theme={theme} accent={accent} label="Update" title="Move the last one to now" onTap={() => store.bumpLast(tile.key)} />)}
       </div>
 
       <div style={{ minWidth: 0 }}>
@@ -203,8 +204,8 @@ function Tile({ tile, theme, events, store, now, chooserOpen, onOpenChooser }) {
             {weightLine.text}
           </div>
         )}
-        {isPoop && !running && (
-          <div style={{ fontSize: 11, color: theme.inkFaint, marginTop: 2 }}>tap = full · hold = small</div>
+        {isPoop && (
+          <div style={{ fontSize: 11, color: theme.inkFaint, marginTop: 2 }}>tap = full · Small = small</div>
         )}
         {bathLine && (
           <div style={{ fontSize: 11, color: bathLine.startsWith('bath day') || bathLine.startsWith('missed') ? accent : theme.inkFaint, marginTop: 2, fontWeight: bathLine.startsWith('bath day') ? 600 : 400 }}>
@@ -229,14 +230,18 @@ function Tile({ tile, theme, events, store, now, chooserOpen, onOpenChooser }) {
 }
 
 /**
- * The Update pill: moves the last session's end to now WITHOUT creating a row,
- * so cluster feeds keep "time since last feed" honest without five entries
- * (spec §5.2). Its tap must not fall through to the tile.
+ * The small pill in a tile's corner for its second action. On nursing and
+ * sleep it is Update: move the last session's end to now WITHOUT creating a
+ * row, so cluster feeds keep "time since last feed" honest (spec §5.2). On
+ * poop it is Small: log a small one, where the tile itself logs a full one.
+ * Its tap must not fall through to the tile.
  */
-function UpdatePill({ theme, accent, onTap }) {
+function ActionPill({ theme, accent, label, title, onTap }) {
   return (
     <button
       type="button"
+      title={title}
+      aria-label={title}
       onPointerDown={(e) => e.stopPropagation()}
       onClick={(e) => { e.stopPropagation(); haptic(); onTap(); }}
       style={{
@@ -252,7 +257,7 @@ function UpdatePill({ theme, accent, onTap }) {
         cursor: 'pointer',
         flex: '0 0 auto',
       }}
-    >Update</button>
+    >{label}</button>
   );
 }
 
