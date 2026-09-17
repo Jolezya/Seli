@@ -50,7 +50,7 @@ export function lastSleep(events) {
 
 export const ALL_TYPES = [
   'nurse', 'bottle', 'nap', 'night', 'tummy',
-  'wet', 'poop', 'vitd', 'weight', 'note', 'massage', 'exercise', 'bath',
+  'wet', 'poop', 'vitd', 'weight', 'note', 'massage', 'exercise', 'bath', 'medicine',
 ];
 
 export function isTimedType(type) {
@@ -170,6 +170,26 @@ export function ofType(events, type) {
 /** The most recent event of a type (events must already be newest-first). */
 export function lastOfType(events, type) {
   return events.find((e) => e.type === type) || null;
+}
+
+/**
+ * Medicines other than the daily vitamin D: a 'medicine' row with the name
+ * in `descr`. The questions are "what, when, and how long ago", so the last
+ * one and the names given recently (for one-tap repeats) are what the card
+ * needs.
+ */
+export function lastMedicine(events) {
+  return lastOfType(events, 'medicine');
+}
+export function recentMedicineNames(events, limit = 4) {
+  const names = [];
+  for (const e of events) {
+    if (e.type !== 'medicine') continue;
+    const name = (e.descr || '').trim();
+    if (name && !names.some((n) => n.toLowerCase() === name.toLowerCase())) names.push(name);
+    if (names.length >= limit) break;
+  }
+  return names;
 }
 
 /** An in-progress timed session: a timed-type row with no end. */
