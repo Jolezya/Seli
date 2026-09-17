@@ -146,3 +146,19 @@ describe('poop size', async () => {
     expect(poopSize({ type: 'vitd', side: 'full' })).toBeNull();
   });
 });
+
+describe('medicine', async () => {
+  const { lastMedicine, recentMedicineNames } = await import('../src/lib/events.js');
+  const rows = [
+    { id: 'c', type: 'medicine', start_ts: 3000, descr: 'Paracetamol' },
+    { id: 'b', type: 'note', start_ts: 2500, descr: 'hiccups' },
+    { id: 'a', type: 'medicine', start_ts: 2000, descr: 'paracetamol' },
+    { id: 'z', type: 'medicine', start_ts: 1000, descr: 'Colic drops' },
+  ];
+  it('finds the last dose and the distinct recent names, newest first', () => {
+    expect(lastMedicine(rows).id).toBe('c');
+    expect(recentMedicineNames(rows)).toEqual(['Paracetamol', 'Colic drops']);
+    expect(recentMedicineNames([])).toEqual([]);
+    expect(lastMedicine([])).toBeNull();
+  });
+});

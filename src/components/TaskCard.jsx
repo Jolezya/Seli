@@ -5,8 +5,8 @@
 import React, { useState } from 'react';
 import { Card, CardTitle, Chip, Button, Emoji, haptic } from '../ui.jsx';
 import { categoryColor, categoryTint } from '../theme.js';
-import { clockTime, formatDuration, MINUTE } from '../lib/time.js';
-import { eventsOnDay, openSession, totalDurationOnDay } from '../lib/events.js';
+import { clockTime, formatDuration, timeAgo, whenLabel, MINUTE } from '../lib/time.js';
+import { eventsOnDay, openSession, totalDurationOnDay, lastMedicine, recentMedicineNames } from '../lib/events.js';
 import { msLeftInDay, leftLabel, taskTone } from '../lib/tasks.js';
 import { bathSchedule, toggleDay, WEEKDAYS, DEFAULT_BATH_DAYS } from '../lib/bath.js';
 
@@ -80,7 +80,7 @@ export default function TaskCard({ theme, events, store, now }) {
         <TaskRow theme={theme} emoji="💊" label="Give vitamin D" category="vitd" done={Boolean(vitd)}>
           {vitd ? (
             <Done theme={theme}>
-              Vitamin D given {clockTime(vitd.start_ts)}{vitd.side ? ` · by ${vitd.side}` : ''}
+              Vitamin D given {clockTime(vitd.start_ts)} · {timeAgo(vitd.start_ts, now)}{vitd.side ? ` · by ${vitd.side}` : ''}
             </Done>
           ) : pickingCarer ? (
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -181,8 +181,72 @@ export default function TaskCard({ theme, events, store, now }) {
         </TaskRow>
       </div>
 
+      <Medicine theme={theme} events={events} store={store} now={now} />
+
       <BathDays theme={theme} days={bathDays} onToggle={(d) => store.setPrefs({ bathDays: toggleDay(bathDays, d) })} />
     </Card>
+  );
+}
+
+/**
+ * Medicine, as and when: not a daily task, so it never counts towards the
+ * n/5, but it sits with the care items because that is where a parent looks
+ * for "when did she last have it?". Logs a 'medicine' row with the name.
+ */
+function Medicine({ theme, events, store, now }) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState('');
+  const accent = categoryColor(theme, 'medicine');
+  const last = lastMedicine(events);
+  const recent = recentMedicineNames(events);
+
+  const give = (what) => {
+    const text = (what || '').trim();
+    if (!text) return;
+    haptic();
+    store.logPoint('medicine', { descr: text });
+    setOpen(false);
+    setName('');
+  };
+
+  return (
+    <div style={{ marginTop: 12, paddingTop: 10, borderTop: `1px solid ${theme.line}` }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <Emoji char="💊" size={18} />
+        <div style={{ flex: 1, minWidth: 140 }}>
+          <div style={{ fontSize: 13.5, color: theme.ink, fontWeight: 500 }}>Medicine</div>
+          <div style={{ fontSize: 12, color: last ? theme.inkSoft : theme.inkFaint, marginTop: 1 }}>
+            {last
+              ? `${last.descr || 'given'} · ${whenLabel(last.start_ts, now)} · ${timeAgo(last.start_ts, now)}`
+              : 'nothing given yet'}
+          </div>
+        </div>
+        <Button theme={theme} tone={open ? 'accent' : 'plain'} onClick={() => setOpen((v) => !v)} style={{ padding: '6px 12px' }}>Give</Button>
+      </div>
+
+      {open && (
+        <form
+          onSubmit={(e) => { e.preventDefault(); give(name); }}
+          style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap', alignItems: 'center' }}
+        >
+          {recent.map((n) => (
+            <Chip key={n} theme={theme} accent={accent} onClick={() => give(n)}>{n}</Chip>
+          ))}
+          <input
+            autoFocus={recent.length === 0}
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder={recent.length ? 'or another…' : 'What was given?'}
+            aria-label="Medicine name"
+            style={{
+              flex: '1 1 140px', minWidth: 0, border: `1px solid ${theme.line}`, background: theme.bg,
+              color: theme.ink, borderRadius: 10, padding: '8px 10px', fontSize: 13,
+            }}
+          />
+          <Button theme={theme} tone="accent" type="submit" disabled={!name.trim()} style={{ padding: '6px 12px' }}>Save</Button>
+        </form>
+      )}
+    </div>
   );
 }
 

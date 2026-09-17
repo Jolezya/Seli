@@ -25,6 +25,7 @@ const LABELS = {
   massage: { emoji: '💆', name: 'Massage' },
   exercise: { emoji: '🤸‍♀️', name: 'Exercise' },
   bath: { emoji: '🛁', name: 'Bath' },
+  medicine: { emoji: '💊', name: 'Medicine' },
 };
 
 export default function DayLog({ theme, events, store, now }) {
@@ -201,7 +202,7 @@ function EditDialog({ theme, event, store, onClose }) {
     const patch = { start_ts: fromDatetimeLocal(start) ?? event.start_ts };
     if (timed) patch.end_ts = end ? fromDatetimeLocal(end) : null;
     if (hasAmount) patch.amount = amount === '' ? null : Number(amount);
-    if (event.type === 'note') patch.descr = descr;
+    if (event.type === 'note' || event.type === 'medicine') patch.descr = descr;
     if (event.type === 'poop') patch.side = size;
     store.update(event.id, patch);
     onClose();
@@ -267,9 +268,9 @@ function EditDialog({ theme, event, store, onClose }) {
           </div>
         )}
 
-        {event.type === 'note' && (
+        {(event.type === 'note' || event.type === 'medicine') && (
           <label style={{ display: 'block', marginBottom: 10 }}>
-            <Muted theme={theme} size={11} style={{ marginBottom: 4 }}>Note</Muted>
+            <Muted theme={theme} size={11} style={{ marginBottom: 4 }}>{event.type === 'note' ? 'Note' : 'Medicine'}</Muted>
             <input value={descr} onChange={(e) => setDescr(e.target.value)} style={field} />
           </label>
         )}
@@ -304,6 +305,7 @@ const CLEAR_GROUPS = [
   { key: 'vitd',     label: 'Vitamin D',   types: ['vitd'] },
   { key: 'massage',  label: 'Massage',     types: ['massage'] },
   { key: 'exercise', label: 'Exercise',    types: ['exercise'] },
+  { key: 'medicine', label: 'Medicine',    types: ['medicine'] },
   { key: 'note',     label: 'Notes',       types: ['note'] },
 ];
 
