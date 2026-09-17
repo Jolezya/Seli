@@ -345,6 +345,15 @@ function TempLine({ theme, readings, now, accent }) {
   const path = readings.map((r, i) => `${i ? 'L' : 'M'}${x(r.start_ts).toFixed(1)},${y(r.c).toFixed(1)}`).join(' ');
   const dayTicks = [];
   for (let d = startOfDay(from + 24 * HOUR); d <= to; d += 24 * HOUR) dayTicks.push(d);
+  // Label the latest, the highest, and any other point with room beside it;
+  // readings taken an hour apart would otherwise print on top of each other.
+  const highest = readings.reduce((m, r) => (r.c > m.c ? r : m), readings[0]);
+  const labelled = new Set([readings[readings.length - 1].id, highest.id]);
+  let lastX = -Infinity;
+  for (const r of readings) {
+    const px = x(r.start_ts);
+    if (labelled.has(r.id) || px - lastX >= 34) { labelled.add(r.id); lastX = px; }
+  }
   return (
     <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block', marginTop: 8, overflow: 'visible' }} role="img" aria-label="Temperature over the last three days">
       {[36, 37, 38, 39, 40].filter((g) => g > minY && g < maxY).map((g) => (
@@ -360,8 +369,12 @@ function TempLine({ theme, readings, now, accent }) {
       {readings.length > 1 && <path d={path} fill="none" stroke={accent} strokeWidth="1.5" strokeLinejoin="round" />}
       {readings.map((r) => (
         <g key={r.id}>
-          <circle cx={x(r.start_ts)} cy={y(r.c)} r="3" fill={isFever(r.amount) ? theme.warn : accent} stroke={theme.surface} strokeWidth="1.5" />
-          <text x={Math.max(pad.left + 10, Math.min(W - pad.right - 10, x(r.start_ts)))} y={y(r.c) - 7} fontSize="9" fill={theme.inkSoft} textAnchor="middle" fontVariantNumeric="tabular-nums">{r.c.toFixed(1)}</text>
+          <circle cx={x(r.start_ts)} cy={y(r.c)} r="3" fill={isFever(r.amount) ? theme.warn : accent} stroke={theme.surface} strokeWidth="1.5">
+            <title>{`${r.c.toFixed(1)} °C · ${clockTime(r.start_ts)}`}</title>
+          </circle>
+          {labelled.has(r.id) && (
+            <text x={Math.max(pad.left + 10, Math.min(W - pad.right - 10, x(r.start_ts)))} y={y(r.c) - 7} fontSize="9" fill={theme.inkSoft} textAnchor="middle" fontVariantNumeric="tabular-nums">{r.c.toFixed(1)}</text>
+          )}
         </g>
       ))}
     </svg>
