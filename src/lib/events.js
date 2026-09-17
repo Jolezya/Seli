@@ -50,7 +50,7 @@ export function lastSleep(events) {
 
 export const ALL_TYPES = [
   'nurse', 'bottle', 'nap', 'night', 'tummy',
-  'wet', 'poop', 'vitd', 'weight', 'note', 'massage', 'exercise', 'bath', 'medicine',
+  'wet', 'poop', 'vitd', 'weight', 'note', 'massage', 'exercise', 'bath', 'medicine', 'temp',
 ];
 
 export function isTimedType(type) {
