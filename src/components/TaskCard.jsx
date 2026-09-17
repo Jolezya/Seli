@@ -349,10 +349,11 @@ function TempLine({ theme, readings, now, accent }) {
   // readings taken an hour apart would otherwise print on top of each other.
   const highest = readings.reduce((m, r) => (r.c > m.c ? r : m), readings[0]);
   const labelled = new Set([readings[readings.length - 1].id, highest.id]);
-  let lastX = -Infinity;
+  const taken = [...labelled].map((id) => x(readings.find((r) => r.id === id).start_ts));
   for (const r of readings) {
+    if (labelled.has(r.id)) continue;
     const px = x(r.start_ts);
-    if (labelled.has(r.id) || px - lastX >= 34) { labelled.add(r.id); lastX = px; }
+    if (taken.every((tx) => Math.abs(px - tx) >= 34)) { labelled.add(r.id); taken.push(px); }
   }
   return (
     <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block', marginTop: 8, overflow: 'visible' }} role="img" aria-label="Temperature over the last three days">
