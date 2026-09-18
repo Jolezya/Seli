@@ -273,9 +273,56 @@ export function overlapMs(event, from, to, now = Date.now()) {
 }
 
 
+/**
+ * A sleep longer than this is a data error — a start or end typed on the
+ * wrong day — not a record. It would add 24 hours to every day it spans, so
+ * the analytics leave it out and the Overview says so, loudly, with a way to
+ * fix it (spec: no silent failures; never silently delete).
+ */
+export const MAX_SLEEP_MS = 16 * HOUR;
+
+export function isSuspectSleep(e, now = Date.now()) {
+  if (!SLEEP_TYPES.includes(e.type)) return false;
+  const end = e.end_ts ?? now;
+  return end - e.start_ts > MAX_SLEEP_MS || (e.end_ts != null && e.end_ts < e.start_ts);
+}
+
+/** Sleeps that look wrong, newest first. */
+export function suspectSleeps(events, now = Date.now()) {
+  return events.filter((e) => isSuspectSleep(e, now));
+}
+
+/**
+ * Sleep inside [from, to) as a union of intervals, so two records that
+ * overlap (a nap logged on both phones before they synced) count once and
+ * a day can never hold more than 24 hours. Suspect sleeps are left out.
+ */
+export function sleepMinutesIn(events, from, to, now = Date.now(), type = null) {
+  const spans = [];
+  for (const e of events) {
+    if (!SLEEP_TYPES.includes(e.type) || (type && e.type !== type) || isSuspectSleep(e, now)) continue;
+    const a = Math.max(e.start_ts, from);
+    const b = Math.min(e.end_ts ?? now, to);
+    if (b > a) spans.push([a, b]);
+  }
+  spans.sort((x, y) => x[0] - y[0]);
+  let total = 0;
+  let cur = null;
+  for (const [a, b] of spans) {
+    if (!cur || a > cur[1]) { if (cur) total += cur[1] - cur[0]; cur = [a, b]; }
+    else if (b > cur[1]) cur[1] = b;
+  }
+  if (cur) total += cur[1] - cur[0];
+  return total / MINUTE;
+}
+
 /** Totals for an arbitrary window [from, to). */
 export function windowTotals(events, from, to, now = Date.now()) {
   const t = { feeds: 0, nurse: 0, bottle: 0, bottleMl: 0, sleepMin: 0, nightMin: 0, napMin: 0, wet: 0, poop: 0, tummyMin: 0, any: false };
+  t.sleepMin = sleepMinutesIn(events, from, to, now);
+  t.nightMin = sleepMinutesIn(events, from, to, now, 'night');
+  t.napMin = sleepMinutesIn(events, from, to, now, 'nap');
+  if (t.sleepMin > 0) t.any = true;
   for (const e of events) {
     const inside = e.start_ts >= from && e.start_ts < to;
     if (inside) {
@@ -287,15 +334,9 @@ export function windowTotals(events, from, to, now = Date.now()) {
     }
     // Timed events are clipped to the window rather than assigned by start,
     // so a night sleep from 22:00 to 06:00 lands in both days it touches.
-    if (SLEEP_TYPES.includes(e.type) || e.type === 'tummy') {
+    if (e.type === 'tummy') {
       const ms = overlapMs(e, from, to, now);
-      if (ms > 0) {
-        t.any = true;
-        const min = ms / MINUTE;
-        if (e.type === 'night') { t.nightMin += min; t.sleepMin += min; }
-        else if (e.type === 'nap') { t.napMin += min; t.sleepMin += min; }
-        else t.tummyMin += min;
-      }
+      if (ms > 0) { t.any = true; t.tummyMin += ms / MINUTE; }
     }
   }
   return t;
@@ -364,6 +405,7 @@ export function timelineData(events, from, to, now = Date.now()) {
   const diapers = [];
   for (const e of events) {
     if (SLEEP_TYPES.includes(e.type)) {
+      if (isSuspectSleep(e, now)) continue;
       const start = Math.max(e.start_ts, from);
       const end = Math.min(e.end_ts ?? now, to);
       if (end > start) sleeps.push({ id: e.id, start, end, type: e.type, open: e.end_ts == null });

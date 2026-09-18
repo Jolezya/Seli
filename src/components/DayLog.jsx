@@ -204,6 +204,10 @@ function EditDialog({ theme, event, store, onClose }) {
   const save = () => {
     const patch = { start_ts: fromDatetimeLocal(start) ?? event.start_ts };
     if (timed) patch.end_ts = end ? fromDatetimeLocal(end) : null;
+    if (timed && patch.end_ts != null && patch.end_ts < patch.start_ts) {
+      store.showToast('The end is before the start — check the dates.');
+      return;
+    }
     if (hasAmount) patch.amount = amount === '' ? null : event.type === 'temp' ? (toTenths(amount) ?? event.amount) : Number(amount);
     if (event.type === 'note' || event.type === 'medicine') patch.descr = descr;
     if (event.type === 'poop') patch.side = size;
