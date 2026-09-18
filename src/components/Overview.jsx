@@ -16,15 +16,15 @@ import { Card, CardTitle, Chip, Muted, Button } from '../ui.jsx';
 import { categoryColor, categoryTint } from '../theme.js';
 import {
   dailyTotals, windowTotals, baseline, timelineData, longestSleep,
-  feedGapInWindow, weekOverWeek, formatGap, BASELINE_MIN_DAYS,
-  periodRange, usualByElapsed,
+  feedGapInWindow, formatGap, BASELINE_MIN_DAYS,
+  periodRange, usualByElapsed, suspectSleeps,
 } from '../lib/analytics.js';
 import {
   HOUR, MINUTE, clockTime, formatDuration, dayLabel, startOfLocalDay, addDays,
-  toDateInput, fromDateInput, dayKey,
+  toDateInput, fromDateInput, dayKey, shortDate, timeAgo,
 } from '../lib/time.js';
+import { readings as tempReadings, isFever, FEVER_C, formatTemp } from '../lib/temp.js';
 
-const WINDOWS = [7, 14, 30];
 
 /** The four things the overview tracks, in a fixed order that never changes. */
 const METRICS = [
@@ -55,14 +55,13 @@ function periodLabel(period, range, now) {
 
 export default function Overview({ theme, events, store, now }) {
   const days = store.prefs.window;
-  const [showTable, setShowTable] = useState(false);
   const [periodA, setPeriodA] = useState(DEFAULT_A);
   const [periodB, setPeriodB] = useState(DEFAULT_B);
   const [compare, setCompare] = useState(false);
 
   const rows = useMemo(() => dailyTotals(events, Math.max(days, 7), now), [events, days, now]);
   const usual = useMemo(() => baseline(dailyTotals(events, 30, now)), [events, now]);
-  const weekly = useMemo(() => weekOverWeek(events, now), [events, now]);
+  const suspects = useMemo(() => suspectSleeps(events, now), [events, now]);
 
   if (!events.length) {
     return (
@@ -93,34 +92,10 @@ export default function Overview({ theme, events, store, now }) {
         <PeriodView theme={theme} events={events} now={now} usual={usual} rows={rows} period={periodA} onChange={setPeriodA} />
       )}
 
-      {/* 3. Day by day ------------------------------------------------------- */}
-      <div style={{
-        display: 'flex', alignItems: 'baseline', justifyContent: 'space-between',
-        gap: 8, marginTop: 18, flexWrap: 'wrap',
-      }}>
-        <SectionLabel theme={theme} style={{ margin: 0 }}>Day by day</SectionLabel>
-        <div style={{ display: 'flex', gap: 6 }}>
-          {WINDOWS.map((d) => (
-            <Chip key={d} theme={theme} active={days === d} onClick={() => store.setPrefs({ window: d })}>{d}d</Chip>
-          ))}
-        </div>
-      </div>
-      <div style={{
-        display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '12px 14px', marginTop: 8,
-      }}>
-        {METRICS.map((m) => (
-          <SmallMultiple key={m.key} theme={theme} metric={m} rows={rows.slice(-days)} usual={usual} />
-        ))}
-      </div>
+      {suspects.length > 0 && <SuspectSleeps theme={theme} suspects={suspects} now={now} store={store} />}
 
-      <WeekTrend theme={theme} weekly={weekly} />
-
-      <div style={{ marginTop: 12 }}>
-        <Button theme={theme} onClick={() => setShowTable((v) => !v)} style={{ padding: '6px 12px' }}>
-          {showTable ? 'Hide table' : 'Show as table'}
-        </Button>
-      </div>
-      {showTable && <DayTable theme={theme} rows={rows.slice(-days).filter((r) => r.tracked)} now={now} />}
+      {/* 3. Temperature ----------------------------------------------------- */}
+      <TemperatureSection theme={theme} events={events} now={now} store={store} />
     </Card>
   );
 }
@@ -495,159 +470,193 @@ function Timeline({ theme, events, from, to, now, leftLabel = '24h ago', rightLa
 // ---------------------------------------------------------------------------
 
 /** A column with a rounded cap and a square base. */
-function columnPath(x, y, w, h, r) {
-  const rr = Math.min(r, w / 2, h);
-  return [
-    `M${x},${y + h}`,
-    `V${y + rr}`,
-    `A${rr},${rr} 0 0 1 ${x + rr},${y}`,
-    `H${x + w - rr}`,
-    `A${rr},${rr} 0 0 1 ${x + w},${y + rr}`,
-    `V${y + h}`,
-    'Z',
-  ].join(' ');
-}
-
-function SmallMultiple({ theme, metric, rows, usual }) {
-  const accent = categoryColor(theme, metric.category);
-  const soft = categoryTint(theme, metric.category, theme.name === 'night' ? 0.45 : 0.36);
-
-  // Drawn at roughly its rendered size, so text units are pixels on a phone.
-  const W = 160;
-  const H = 80;
-  const top = 14;
-  const bottom = 14;
-  const plotH = H - top - bottom;
-  const slot = W / rows.length;
-  // Thin marks: a column never fills its slot, and never grows past 18px.
-  const barW = Math.min(18, Math.max(3, slot * 0.45));
-
-  const tracked = rows.filter((r) => r.tracked);
-  const values = tracked.map((r) => r[metric.key]);
-  const max = Math.max(...values, metric.unit === 'minutes' ? 60 : 1);
-  const avg = usual.ready ? usual[metric.key] : null;
-  const y = (v) => top + plotH - (v / max) * plotH;
-
-  const maxRow = tracked.reduce((best, r) => (!best || r[metric.key] > best[metric.key] ? r : best), null);
-  const todayRow = rows.find((r) => r.isToday);
-  const firstTrackedIndex = rows.findIndex((r) => r.tracked);
-  const avgX0 = firstTrackedIndex >= 0 ? firstTrackedIndex * slot : 0;
-
+/**
+ * Sleeps the analytics refused: longer than 16 hours, or ending before
+ * they start. Each one would add a full day of sleep to every day it spans.
+ * Named here with a way to fix or delete, never dropped quietly.
+ */
+function SuspectSleeps({ theme, suspects, now, store }) {
   return (
-    <div>
-      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 6 }}>
-        <span style={{ fontSize: 12, fontWeight: 600, color: theme.ink }}>
-          <Key theme={theme} category={metric.category} /> {metric.label}
-          {metric.unit === 'minutes' && <span style={{ color: theme.inkFaint, fontWeight: 400 }}> hours</span>}
-        </span>
-        {avg != null && (
-          <span style={{ fontSize: 10.5, color: theme.inkFaint, fontVariantNumeric: 'tabular-nums' }}>
-            avg {formatValue(metric, avg)}
-          </span>
-        )}
+    <div style={{
+      marginTop: 16, padding: '10px 12px', borderRadius: 12,
+      background: categoryTint(theme, 'night', 0.10), border: `1px solid ${theme.warn}`,
+    }}>
+      <div style={{ fontSize: 12.5, fontWeight: 650, color: theme.warn }}>
+        {suspects.length === 1 ? 'One sleep entry looks wrong' : `${suspects.length} sleep entries look wrong`} and is left out of the totals
       </div>
-      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block', overflow: 'visible' }} role="img"
-        aria-label={`${metric.label} per day over the last ${rows.length} days`}>
-        <line x1="0" y1={top + plotH + 0.5} x2={W} y2={top + plotH + 0.5} stroke={theme.line} strokeWidth="1" />
-        {avg != null && avg <= max && (
-          <line x1={avgX0} y1={y(avg)} x2={W} y2={y(avg)} stroke={theme.inkFaint} strokeWidth="1" opacity="0.6" />
-        )}
-        {rows.map((r, i) => {
-          if (!r.tracked) return null;
-          const v = r[metric.key];
-          const cx = i * slot + slot / 2;
-          const h = v > 0 ? Math.max(2, (v / max) * plotH) : 0;
-          const isLabelled = r === todayRow || (r === maxRow && v > 0);
-          return (
-            <g key={r.key}>
-              {h > 0 && (
-                <path d={columnPath(cx - barW / 2, top + plotH - h, barW, h, 4)} fill={r.isToday ? accent : soft}>
-                  <title>{`${dayLabel(r.dayTs)} · ${formatValue(metric, v)}`}</title>
-                </path>
-              )}
-              {isLabelled && v > 0 && (
-                <text x={cx} y={top + plotH - h - 3} fontSize="9" fill={theme.inkSoft} textAnchor="middle"
-                  fontVariantNumeric="tabular-nums">{formatValue(metric, v)}</text>
-              )}
-              <rect x={i * slot} y={top} width={slot} height={plotH} fill="transparent">
-                <title>{`${dayLabel(r.dayTs)} · ${formatValue(metric, v)}`}</title>
-              </rect>
-            </g>
-          );
-        })}
-        <text x={0} y={H - 3} fontSize="8.5" fill={theme.inkFaint}>{rows[0] ? shortDay(rows[0].dayTs) : ''}</text>
-        <text x={W} y={H - 3} fontSize="8.5" fill={theme.inkFaint} textAnchor="end">today</text>
-      </svg>
+      {suspects.map((e) => (
+        <div key={e.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, fontSize: 12, color: theme.ink, flexWrap: 'wrap' }}>
+          <span style={{ flex: 1, minWidth: 160 }}>
+            {e.type === 'night' ? 'Night sleep' : 'Nap'} {shortDate(e.start_ts)} {clockTime(e.start_ts)}
+            {' → '}{e.end_ts == null ? 'still open' : `${shortDate(e.end_ts)} ${clockTime(e.end_ts)}`}
+            {' · '}{formatDuration(Math.abs((e.end_ts ?? now) - e.start_ts))}
+          </span>
+          <Button theme={theme} onClick={() => store.update(e.id, { end_ts: e.start_ts + 2 * HOUR })} style={{ padding: '4px 9px', fontSize: 12 }} title="Set the end to two hours after the start; adjust in the day log">
+            End after 2h
+          </Button>
+          <Button theme={theme} onClick={() => store.remove(e.id, 'Sleep')} style={{ padding: '4px 9px', fontSize: 12, color: theme.bad }}>Delete</Button>
+        </div>
+      ))}
+      <Muted theme={theme} size={11} style={{ marginTop: 6 }}>Open the day log on that date to set the exact times.</Muted>
     </div>
   );
 }
 
-function shortDay(ts) {
-  return new Date(ts).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
-}
+const TEMP_RANGES = [
+  { key: '24h', label: '24h', hours: 24 },
+  { key: '3d', label: '3 days', hours: 72 },
+  { key: '7d', label: '7 days', hours: 168 },
+];
 
-// ---------------------------------------------------------------------------
-// Week over week, and the table twin.
-// ---------------------------------------------------------------------------
+/**
+ * Temperature in detail: every reading at its exact time, the fever zone
+ * shaded, and the readings listed newest first with the change from the one
+ * before. For an illness, not for every day — with nothing in the last week
+ * it is one quiet line.
+ */
+function TemperatureSection({ theme, events, now, store }) {
+  const [rangeKey, setRangeKey] = useState('3d');
+  const range = TEMP_RANGES.find((r) => r.key === rangeKey) || TEMP_RANGES[1];
+  const all = useMemo(() => tempReadings(events), [events]);
+  const inWeek = all.filter((r) => r.start_ts >= now - 168 * HOUR);
+  const accent = categoryColor(theme, 'temp');
 
-function WeekTrend({ theme, weekly }) {
-  if (!weekly) {
+  if (!inWeek.length) {
     return (
-      <Muted theme={theme} size={11} style={{ marginTop: 10 }}>
-        A week-on-week comparison appears once two full weeks are logged.
-      </Muted>
+      <div style={{ marginTop: 18 }}>
+        <SectionLabel theme={theme}>Temperature</SectionLabel>
+        <Muted theme={theme}>No readings in the last week. Measure from the care card when she feels warm; the line and the list appear here.</Muted>
+      </div>
     );
   }
-  const line = (label, m, unit) => {
-    const now = formatValue({ unit }, m.now);
-    const before = formatValue({ unit }, m.before);
-    const tolerance = unit === 'minutes' ? 20 : 0.4;
-    const word = m.delta > tolerance ? 'up from' : m.delta < -tolerance ? 'down from' : 'about the same as';
-    return `${label} ${now}/day, ${word} ${before}`;
-  };
-  return (
-    <Muted theme={theme} size={12} style={{ marginTop: 10, color: theme.ink }}>
-      <span style={{ color: theme.inkSoft }}>This week vs last: </span>
-      {line('Feeds', weekly.feeds, 'count')} · {line('Sleep', weekly.sleepMin, 'minutes')} · {line('Wet', weekly.wet, 'count')} · {line('Poop', weekly.poop, 'count')}
-    </Muted>
-  );
-}
 
-function DayTable({ theme, rows, now }) {
-  // A breastfeeding-only household never has bottle volume; don't show a
-  // column of dashes for it.
-  const showMl = rows.some((r) => r.bottleMl > 0);
-  const cell = { padding: '6px 5px', fontSize: 12, borderBottom: `1px solid ${theme.line}`, whiteSpace: 'nowrap' };
-  const num = { ...cell, textAlign: 'right', fontVariantNumeric: 'tabular-nums' };
-  const head = { ...cell, fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase', color: theme.inkFaint, fontWeight: 600 };
+  const from = now - range.hours * HOUR;
+  const shown = all.filter((r) => r.start_ts >= from);
+  const listed = [...inWeek].reverse();
+
   return (
-    <div style={{ overflowX: 'auto', marginTop: 10 }}>
-      <table style={{ borderCollapse: 'collapse', width: '100%', color: theme.ink }}>
-        <thead>
-          <tr>
-            <th style={{ ...head, textAlign: 'left' }}>Day</th>
-            <th style={{ ...head, textAlign: 'right' }}>Feeds</th>
-            {showMl && <th style={{ ...head, textAlign: 'right' }}>ml</th>}
-            <th style={{ ...head, textAlign: 'right' }}>Sleep</th>
-            <th style={{ ...head, textAlign: 'right' }}>Wet</th>
-            <th style={{ ...head, textAlign: 'right' }}>Poop</th>
-          </tr>
-        </thead>
-        <tbody>
-          {[...rows].reverse().map((r) => (
-            <tr key={r.key}>
-              <td style={cell}>{dayLabel(r.dayTs, now)}</td>
-              <td style={num}>{r.feeds}</td>
-              {showMl && <td style={num}>{r.bottleMl || '—'}</td>}
-              <td style={num}>{formatValue({ unit: 'minutes' }, r.sleepMin)}</td>
-              <td style={num}>{r.wet}</td>
-              <td style={num}>{r.poop}</td>
-            </tr>
+    <div style={{ marginTop: 18 }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+        <SectionLabel theme={theme} style={{ margin: 0 }}>Temperature</SectionLabel>
+        <div style={{ display: 'flex', gap: 6 }}>
+          {TEMP_RANGES.map((r) => (
+            <Chip key={r.key} theme={theme} accent={accent} active={rangeKey === r.key} onClick={() => setRangeKey(r.key)}>{r.label}</Chip>
           ))}
-        </tbody>
-      </table>
+        </div>
+      </div>
+
+      {shown.length ? (
+        <TempChart theme={theme} readings={shown} from={from} now={now} accent={accent} />
+      ) : (
+        <Muted theme={theme} style={{ marginTop: 8 }}>No readings in the last {range.label}.</Muted>
+      )}
+
+      <div style={{ marginTop: 8 }}>
+        {listed.map((r, i) => {
+          const prev = listed[i + 1] || null;
+          const delta = prev ? r.c - prev.c : null;
+          const fever = isFever(r.amount);
+          return (
+            <div key={r.id} style={{
+              display: 'grid', gridTemplateColumns: 'minmax(84px, auto) 56px 1fr auto', alignItems: 'baseline', columnGap: 8, padding: '6px 0',
+              borderTop: i ? `1px solid ${theme.line}` : 'none', fontSize: 12, color: theme.ink,
+            }}>
+              <span style={{ color: theme.inkSoft, whiteSpace: 'nowrap' }}>{dayLabel(r.start_ts, now)} {clockTime(r.start_ts)}</span>
+              <span style={{ fontWeight: 650, color: fever ? theme.warn : theme.ink, fontVariantNumeric: 'tabular-nums' }}>{formatTemp(r.amount)}</span>
+              <span style={{ color: theme.inkFaint, fontVariantNumeric: 'tabular-nums', minWidth: 0 }}>
+                {delta == null ? 'first reading' : delta === 0 ? 'no change' : `${delta > 0 ? '+' : '−'}${Math.abs(delta).toFixed(1)} since ${clockTime(prev.start_ts)}`}
+              </span>
+              <span style={{ color: theme.inkFaint, fontSize: 11, whiteSpace: 'nowrap', textAlign: 'right' }}>{timeAgo(r.start_ts, now)}</span>
+            </div>
+          );
+        })}
+      </div>
+      <Muted theme={theme} size={11} style={{ marginTop: 6 }}>
+        <span style={{ color: theme.warn }}>shaded</span> = {FEVER_C.toFixed(1)} °C and above · tap an entry in the day log to correct it
+      </Muted>
     </div>
   );
 }
 
-export { addDays };
+/**
+ * Readings on a time axis with hour and day ticks sized to the range, the
+ * fever zone shaded, every point labelled that has room. Fixed aspect.
+ */
+function TempChart({ theme, readings, from, now, accent }) {
+  const W = 340;
+  const H = 150;
+  const pad = { top: 16, right: 14, bottom: 30, left: 30 };
+  const to = now;
+  const temps = readings.map((r) => r.c);
+  const minY = Math.floor(Math.min(36.5, ...temps) - 0.4);
+  const maxY = Math.ceil(Math.max(38.5, ...temps) + 0.3);
+  const x = (ts) => pad.left + ((ts - from) / (to - from)) * (W - pad.left - pad.right);
+  const y = (c) => pad.top + (1 - (c - minY) / (maxY - minY)) * (H - pad.top - pad.bottom);
+  const path = readings.map((r, i) => `${i ? 'L' : 'M'}${x(r.start_ts).toFixed(1)},${y(r.c).toFixed(1)}`).join(' ');
+  const hours = (to - from) / HOUR;
+  const tickEvery = hours <= 24 ? 6 * HOUR : hours <= 72 ? 12 * HOUR : 24 * HOUR;
+  const ticks = [];
+  const first = Math.ceil(from / tickEvery) * tickEvery;
+  for (let t = first; t < to - HOUR; t += tickEvery) {
+    const d = new Date(t);
+    // Round to the local wall clock so 12-hour ticks land at 00:00 / 12:00.
+    d.setMinutes(0, 0, 0);
+    const local = d.getHours() % (tickEvery / HOUR);
+    if (local !== 0) continue;
+    if (x(d.getTime()) < W - pad.right - 28) ticks.push(d.getTime());
+  }
+  const gridY = [];
+  for (let g = minY; g <= maxY; g += 1) gridY.push(g);
+  const latest = readings[readings.length - 1];
+  const highest = readings.reduce((m, r) => (r.c > m.c ? r : m), readings[0]);
+  const labelled = new Set([latest.id]);
+  const taken = [x(latest.start_ts)];
+  if (highest.id !== latest.id && Math.abs(x(highest.start_ts) - taken[0]) >= 30) { labelled.add(highest.id); taken.push(x(highest.start_ts)); }
+  for (const r of readings) {
+    if (labelled.has(r.id)) continue;
+    const px = x(r.start_ts);
+    if (taken.every((tx) => Math.abs(px - tx) >= 30)) { labelled.add(r.id); taken.push(px); }
+  }
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block', marginTop: 8, overflow: 'visible' }} role="img" aria-label="Temperature readings over time">
+      {FEVER_C < maxY && (
+        <rect x={pad.left} y={y(maxY)} width={W - pad.left - pad.right} height={Math.max(0, y(FEVER_C) - y(maxY))} fill={categoryTint(theme, 'temp', theme.name === 'night' ? 0.16 : 0.10)} />
+      )}
+      {gridY.map((g) => (
+        <g key={g}>
+          <line x1={pad.left} y1={y(g)} x2={W - pad.right} y2={y(g)} stroke={theme.line} strokeWidth="0.75" />
+          <text x={pad.left - 6} y={y(g) + 3} fontSize="8.5" fill={theme.inkFaint} textAnchor="end">{g}°</text>
+        </g>
+      ))}
+      <line x1={pad.left} y1={y(FEVER_C)} x2={W - pad.right} y2={y(FEVER_C)} stroke={theme.warn} strokeWidth="1" strokeDasharray="4 3" />
+      {ticks.map((t) => {
+        const d = new Date(t);
+        const label = d.getHours() === 0 ? shortDate(t) : clockTime(t);
+        return (
+          <g key={t}>
+            <line x1={x(t)} y1={pad.top} x2={x(t)} y2={H - pad.bottom} stroke={theme.line} strokeWidth="0.75" />
+            <text x={x(t)} y={H - pad.bottom + 11} fontSize="8.5" fill={theme.inkFaint} textAnchor="middle">{label}</text>
+          </g>
+        );
+      })}
+      <text x={W - pad.right} y={H - pad.bottom + 11} fontSize="8.5" fill={theme.inkFaint} textAnchor="end">now</text>
+      <text x={pad.left} y={H - 4} fontSize="8.5" fill={theme.inkFaint}>{shortDate(from)} {clockTime(from)}</text>
+      {readings.length > 1 && <path d={path} fill="none" stroke={accent} strokeWidth="1.5" strokeLinejoin="round" />}
+      {readings.map((r) => (
+        <g key={r.id}>
+          <circle cx={x(r.start_ts)} cy={y(r.c)} r="3.2" fill={isFever(r.amount) ? theme.warn : accent} stroke={theme.surface} strokeWidth="1.5">
+            <title>{`${r.c.toFixed(1)} °C · ${shortDate(r.start_ts)} ${clockTime(r.start_ts)}`}</title>
+          </circle>
+          {labelled.has(r.id) && (
+            <text
+              x={Math.max(pad.left + 10, Math.min(W - pad.right - 10, x(r.start_ts)))} y={y(r.c) - 7}
+              fontSize="9" fill={theme.inkSoft} textAnchor="middle" fontVariantNumeric="tabular-nums"
+              stroke={theme.surface} strokeWidth="3" paintOrder="stroke"
+            >{r.c.toFixed(1)}</text>
+          )}
+        </g>
+      ))}
+    </svg>
+  );
+}

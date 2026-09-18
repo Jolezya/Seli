@@ -9,8 +9,8 @@ import { clockTime, formatDuration, timeAgo, whenLabel, MINUTE } from '../lib/ti
 import { eventsOnDay, openSession, totalDurationOnDay, lastMedicine, recentMedicineNames } from '../lib/events.js';
 import { msLeftInDay, leftLabel, taskTone } from '../lib/tasks.js';
 import { bathSchedule, toggleDay, WEEKDAYS, DEFAULT_BATH_DAYS } from '../lib/bath.js';
-import { toTenths, formatTemp, lastReading, recentReadings, isFever, FEVER_C, RECENT_HOURS } from '../lib/temp.js';
-import { HOUR, shortDate } from '../lib/time.js';
+import { toTenths, formatTemp, lastReading, isFever, FEVER_C } from '../lib/temp.js';
+import { HOUR } from '../lib/time.js';
 
 export const CARERS = ['Kay', 'Maren', 'Both'];
 export const TUMMY_GOALS = [10, 15, 20, 30];
@@ -262,9 +262,7 @@ function Medicine({ theme, events, store, now }) {
 function Temperature({ theme, events, store, now }) {
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState('');
-  const accent = categoryColor(theme, 'temp');
   const last = lastReading(events);
-  const recent = recentReadings(events, now);
   const fever = last && isFever(last.amount) && now - last.start_ts < 12 * HOUR;
 
   const save = (e) => {
@@ -322,72 +320,9 @@ function Temperature({ theme, events, store, now }) {
         </div>
       )}
 
-      {recent.length > 0 && <TempLine theme={theme} readings={recent} now={now} accent={accent} />}
     </div>
   );
 }
-
-/**
- * The line: readings over the last three days on a time axis, the fever line
- * dashed across, every point labelled because there are never many. Fixed
- * aspect so labels never stretch.
- */
-function TempLine({ theme, readings, now, accent }) {
-  const W = 340;
-  const H = 96;
-  const pad = { top: 16, right: 14, bottom: 18, left: 30 };
-  const from = now - RECENT_HOURS * HOUR;
-  const to = now;
-  const temps = readings.map((r) => r.c);
-  const minY = Math.min(36, ...temps) - 0.3;
-  const maxY = Math.max(38.5, ...temps) + 0.3;
-  const x = (ts) => pad.left + ((ts - from) / (to - from)) * (W - pad.left - pad.right);
-  const y = (c) => pad.top + (1 - (c - minY) / (maxY - minY)) * (H - pad.top - pad.bottom);
-  const path = readings.map((r, i) => `${i ? 'L' : 'M'}${x(r.start_ts).toFixed(1)},${y(r.c).toFixed(1)}`).join(' ');
-  const dayTicks = [];
-  // A day tick within reach of the "now" label at the right edge is dropped.
-  for (let d = startOfDay(from + 24 * HOUR); d <= to; d += 24 * HOUR) if (x(d) < W - pad.right - 30) dayTicks.push(d);
-  // Label the latest, the highest, and any other point with room beside it;
-  // readings taken an hour apart would otherwise print on top of each other.
-  // The latest always; the highest when it has room beside the latest.
-  const latest = readings[readings.length - 1];
-  const highest = readings.reduce((m, r) => (r.c > m.c ? r : m), readings[0]);
-  const labelled = new Set([latest.id]);
-  const taken = [x(latest.start_ts)];
-  if (highest.id !== latest.id && Math.abs(x(highest.start_ts) - taken[0]) >= 34) { labelled.add(highest.id); taken.push(x(highest.start_ts)); }
-  for (const r of readings) {
-    if (labelled.has(r.id)) continue;
-    const px = x(r.start_ts);
-    if (taken.every((tx) => Math.abs(px - tx) >= 34)) { labelled.add(r.id); taken.push(px); }
-  }
-  return (
-    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block', marginTop: 8, overflow: 'visible' }} role="img" aria-label="Temperature over the last three days">
-      {[36, 37, 38, 39, 40].filter((g) => g > minY && g < maxY).map((g) => (
-        <g key={g}>
-          <line x1={pad.left} y1={y(g)} x2={W - pad.right} y2={y(g)} stroke={g === FEVER_C ? theme.warn : theme.line} strokeWidth={g === FEVER_C ? 1 : 0.75} strokeDasharray={g === FEVER_C ? '4 3' : undefined} />
-          <text x={pad.left - 6} y={y(g) + 3} fontSize="8.5" fill={g === FEVER_C ? theme.warn : theme.inkFaint} textAnchor="end">{g}°</text>
-        </g>
-      ))}
-      {dayTicks.map((d) => (
-        <text key={d} x={x(d)} y={H - 4} fontSize="8.5" fill={theme.inkFaint} textAnchor="middle">{shortDate(d)}</text>
-      ))}
-      <text x={W - pad.right} y={H - 4} fontSize="8.5" fill={theme.inkFaint} textAnchor="end">now</text>
-      {readings.length > 1 && <path d={path} fill="none" stroke={accent} strokeWidth="1.5" strokeLinejoin="round" />}
-      {readings.map((r) => (
-        <g key={r.id}>
-          <circle cx={x(r.start_ts)} cy={y(r.c)} r="3" fill={isFever(r.amount) ? theme.warn : accent} stroke={theme.surface} strokeWidth="1.5">
-            <title>{`${r.c.toFixed(1)} °C · ${clockTime(r.start_ts)}`}</title>
-          </circle>
-          {labelled.has(r.id) && (
-            <text x={Math.max(pad.left + 10, Math.min(W - pad.right - 10, x(r.start_ts)))} y={y(r.c) - 7} fontSize="9" fill={theme.inkSoft} textAnchor="middle" fontVariantNumeric="tabular-nums">{r.c.toFixed(1)}</text>
-          )}
-        </g>
-      ))}
-    </svg>
-  );
-}
-
-function startOfDay(ts) { const d = new Date(ts); d.setHours(0, 0, 0, 0); return d.getTime(); }
 
 /** The bath schedule: seven small day chips, the scheduled ones filled. */
 function BathDays({ theme, days, onToggle }) {

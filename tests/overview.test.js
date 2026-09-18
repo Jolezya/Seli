@@ -208,3 +208,22 @@ describe('period ranges and the by-this-time baseline', () => {
     expect(fullDay.feeds).toBe(4);        // the whole-day figure it must NOT be compared to
   });
 });
+
+describe('sleep that cannot be right', async () => {
+  const { sleepMinutesIn, suspectSleeps, windowTotals: wt } = await import('../src/lib/analytics.js');
+  it('unions overlapping sleeps so a day never exceeds 24 hours', () => {
+    const rows = [ev('nap', at(10, 13), { end_ts: at(10, 14) }), ev('nap', at(10, 13, 30), { end_ts: at(10, 15) })];
+    expect(sleepMinutesIn(rows, at(10, 0), at(11, 0))).toBe(120);
+  });
+  it('leaves a sleep longer than 16 hours out, and names it', () => {
+    const bad = ev('night', at(8, 21), { end_ts: at(12, 9) });
+    const good = ev('night', at(11, 21), { end_ts: at(12, 5) });
+    const now = at(12, 12);
+    expect(suspectSleeps([bad, good], now).map((e) => e.id)).toEqual([bad.id]);
+    expect(wt([bad, good], at(11, 0), at(12, 0), now).sleepMin).toBe(180);
+    expect(wt([bad, good], at(9, 0), at(10, 0), now).sleepMin).toBe(0);
+  });
+  it('treats an end before the start as suspect too', () => {
+    expect(suspectSleeps([ev('nap', at(10, 14), { end_ts: at(10, 13) })], at(10, 15))).toHaveLength(1);
+  });
+});
