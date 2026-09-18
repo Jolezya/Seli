@@ -254,7 +254,7 @@ function EditDialog({ theme, event, store, onClose }) {
             <Muted theme={theme} size={11} style={{ marginBottom: 4 }}>
               {event.type === 'weight' ? 'Grams' : event.type === 'temp' ? 'Temperature (°C)' : 'Millilitres'}
             </Muted>
-            <input type="number" inputMode="decimal" step={event.type === 'temp' ? '0.1' : '1'} value={amount} onChange={(e) => setAmount(e.target.value)} style={field} />
+            <input type={event.type === 'temp' ? 'text' : 'number'} inputMode={event.type === 'temp' ? 'decimal' : 'numeric'} value={amount} onChange={(e) => setAmount(e.target.value)} style={field} />
           </label>
         )}
 

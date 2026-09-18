@@ -294,13 +294,14 @@ function Temperature({ theme, events, store, now }) {
 
       {open && (
         <form onSubmit={save} style={{ display: 'flex', gap: 6, marginTop: 8, alignItems: 'center' }}>
+          {/* A text field, not type="number": iOS rejects the comma that a
+              Norwegian keyboard offers as its decimal mark, and the parser
+              accepts either. inputMode still brings up the numeric pad. */}
           <input
             autoFocus
-            type="number"
+            type="text"
             inputMode="decimal"
-            step="0.1"
-            min="34"
-            max="43"
+            pattern="[0-9]*[.,]?[0-9]*"
             value={value}
             onChange={(e) => setValue(e.target.value)}
             placeholder="37.2"
@@ -344,12 +345,16 @@ function TempLine({ theme, readings, now, accent }) {
   const y = (c) => pad.top + (1 - (c - minY) / (maxY - minY)) * (H - pad.top - pad.bottom);
   const path = readings.map((r, i) => `${i ? 'L' : 'M'}${x(r.start_ts).toFixed(1)},${y(r.c).toFixed(1)}`).join(' ');
   const dayTicks = [];
-  for (let d = startOfDay(from + 24 * HOUR); d <= to; d += 24 * HOUR) dayTicks.push(d);
+  // A day tick within reach of the "now" label at the right edge is dropped.
+  for (let d = startOfDay(from + 24 * HOUR); d <= to; d += 24 * HOUR) if (x(d) < W - pad.right - 30) dayTicks.push(d);
   // Label the latest, the highest, and any other point with room beside it;
   // readings taken an hour apart would otherwise print on top of each other.
+  // The latest always; the highest when it has room beside the latest.
+  const latest = readings[readings.length - 1];
   const highest = readings.reduce((m, r) => (r.c > m.c ? r : m), readings[0]);
-  const labelled = new Set([readings[readings.length - 1].id, highest.id]);
-  const taken = [...labelled].map((id) => x(readings.find((r) => r.id === id).start_ts));
+  const labelled = new Set([latest.id]);
+  const taken = [x(latest.start_ts)];
+  if (highest.id !== latest.id && Math.abs(x(highest.start_ts) - taken[0]) >= 34) { labelled.add(highest.id); taken.push(x(highest.start_ts)); }
   for (const r of readings) {
     if (labelled.has(r.id)) continue;
     const px = x(r.start_ts);
