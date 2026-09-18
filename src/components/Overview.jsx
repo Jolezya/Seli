@@ -15,8 +15,7 @@ import React, { useMemo, useState } from 'react';
 import { Card, CardTitle, Chip, Muted, Button } from '../ui.jsx';
 import { categoryColor, categoryTint } from '../theme.js';
 import {
-  dailyTotals, windowTotals, baseline, timelineData, longestSleep,
-  feedGapInWindow, formatGap, BASELINE_MIN_DAYS,
+  dailyTotals, windowTotals, baseline, BASELINE_MIN_DAYS,
   periodRange, usualByElapsed, suspectSleeps,
 } from '../lib/analytics.js';
 import {
@@ -169,11 +168,6 @@ function usualFor(events, range, usual, now) {
   return usualByElapsed(events, range.elapsedTo - range.from, now);
 }
 
-function stripProps(range) {
-  if (range.rolling) return { leftLabel: '24h ago', rightLabel: 'now', axisTo: range.elapsedTo };
-  return { leftLabel: '00:00', rightLabel: '24:00', axisTo: range.dayEnd };
-}
-
 function PeriodView({ theme, events, now, usual, rows, period, onChange }) {
   const range = useMemo(() => resolve(period, now), [period, now]);
   const totals = useMemo(() => windowTotals(events, range.from, range.to + 1, now), [events, range, now]);
@@ -276,10 +270,6 @@ function CompareView({ theme, events, now, usual, rows, periodA, periodB, onA, o
         </table>
       </div>
 
-      <SectionLabel theme={theme} style={{ marginTop: 18, color: accentA }}>A · {la.replace(' so far', '')}</SectionLabel>
-      <Timeline theme={theme} events={events} from={a.from} to={a.to} now={now} {...stripProps(a)} />
-      <SectionLabel theme={theme} style={{ marginTop: 18, color: accentB }}>B · {lb.replace(' so far', '')}</SectionLabel>
-      <Timeline theme={theme} events={events} from={b.from} to={b.to} now={now} {...stripProps(b)} />
     </>
   );
 }
@@ -335,137 +325,6 @@ function StatTile({ theme, metric, value, usual, rows, usualWord = 'usually', hi
   );
 }
 
-// ---------------------------------------------------------------------------
-// 2. The 24-hour strip.
-// ---------------------------------------------------------------------------
-
-function Timeline({ theme, events, from, to, now, leftLabel = '24h ago', rightLabel = 'now', axisTo = to }) {
-  const data = useMemo(() => timelineData(events, from, to, now), [events, from, to, now]);
-  const longest = useMemo(() => longestSleep(events, from, to, now), [events, from, to, now]);
-  const gap = useMemo(() => feedGapInWindow(events, from, to + 1), [events, from, to]);
-  const totals = useMemo(() => windowTotals(events, from, to + 1, now), [events, from, to, now]);
-
-  const W = 520;
-  const H = 92;
-  const pad = 10;
-  // The axis may run past the data (a day still in progress runs to 24:00).
-  const x = (ts) => pad + ((ts - from) / (axisTo - from)) * (W - 2 * pad);
-  const nowInside = now >= from && now <= axisTo;
-  const laneSleep = 18;
-  const laneFeed = 46;
-  const laneDiaper = 68;
-  const surface = theme.surfaceBottom;
-
-  const sleepColor = categoryColor(theme, 'night');
-  const feedColor = categoryColor(theme, 'nurse');
-  const wetColor = categoryColor(theme, 'wet');
-  const poopColor = categoryColor(theme, 'poop');
-
-  // Clean hour labels: every local 06/12/18/00 that falls inside the window.
-  const ticks = [];
-  for (let t = startOfLocalDay(from); t <= axisTo; t += 6 * HOUR) {
-    const px = x(t);
-    if (px > pad + 44 && px < W - pad - 30) ticks.push(t);
-  }
-
-  return (
-    <div>
-      <svg
-        viewBox={`0 0 ${W} ${H}`}
-        style={{ width: '100%', height: 'auto', display: 'block', overflow: 'visible' }}
-        role="img"
-        aria-label="Sleeps, feeds and diapers over the last 24 hours"
-      >
-        {/* Hairline lanes and hour ticks, one step off the surface. */}
-        {[laneSleep, laneFeed, laneDiaper].map((y) => (
-          <line key={y} x1={pad} y1={y} x2={W - pad} y2={y} stroke={theme.line} strokeWidth="1" />
-        ))}
-        {ticks.map((t) => (
-          <g key={t}>
-            <line x1={x(t)} y1={laneSleep - 10} x2={x(t)} y2={laneDiaper + 8} stroke={theme.line} strokeWidth="1" />
-            <text x={x(t)} y={H - 4} fontSize="9" fill={theme.inkFaint} textAnchor="middle">{clockTime(t)}</text>
-          </g>
-        ))}
-        <text x={pad} y={H - 4} fontSize="9" fill={theme.inkFaint}>{leftLabel}</text>
-        <text x={W - pad} y={H - 4} fontSize="9" fill={theme.inkFaint} textAnchor="end">{rightLabel}</text>
-
-        {/* Sleep spans, 12px thick, square where a session is still running. */}
-        {data.sleeps.map((s) => {
-          const x0 = x(s.start);
-          const x1 = x(s.end);
-          return (
-            <rect
-              key={s.id} x={x0} y={laneSleep - 6} width={Math.max(2, x1 - x0)} height={12}
-              rx={s.open ? 0 : 3} fill={sleepColor}
-            >
-              <title>{`${s.type === 'night' ? 'Night sleep' : 'Nap'} ${clockTime(s.start)}–${s.open ? 'now' : clockTime(s.end)} · ${formatDuration(s.end - s.start)}`}</title>
-            </rect>
-          );
-        })}
-
-        {/* Feeds: nursing filled, bottle as a ring — shape carries the subtype. */}
-        {data.feeds.map((f) => (
-          <g key={f.id}>
-            <circle cx={x(f.ts)} cy={laneFeed} r={7} fill={surface} />
-            {f.type === 'nurse'
-              ? <circle cx={x(f.ts)} cy={laneFeed} r={5} fill={feedColor} />
-              : <circle cx={x(f.ts)} cy={laneFeed} r={4} fill={surface} stroke={feedColor} strokeWidth={2} />}
-            <circle cx={x(f.ts)} cy={laneFeed} r={12} fill="transparent">
-              <title>{`${f.type === 'nurse' ? 'Nursing' : `Bottle${f.amount ? ` ${f.amount} ml` : ''}`} · ${clockTime(f.ts)}`}</title>
-            </circle>
-          </g>
-        ))}
-
-        {/* Diapers as ticks: wet above the lane, poop below, so a change with
-            both never hides one behind the other. */}
-        {data.diapers.map((d) => {
-          // A small poop is a shorter tick: the size is the point of logging it.
-          const h = d.type === 'poop' && d.size === 'small' ? 4 : 8;
-          return (
-            <g key={d.id}>
-              <rect
-                x={x(d.ts) - 1} y={d.type === 'wet' ? laneDiaper - 9 : laneDiaper + 1}
-                width={2} height={h} rx={1} fill={d.type === 'wet' ? wetColor : poopColor}
-              />
-              <rect x={x(d.ts) - 6} y={laneDiaper - 12} width={12} height={24} fill="transparent">
-                <title>{`${d.type === 'wet' ? 'Wet' : `Poop${d.size ? ` (${d.size})` : ''}`} · ${clockTime(d.ts)}`}</title>
-              </rect>
-            </g>
-          );
-        })}
-
-        {/* Now — only when it falls inside the axis. */}
-        {nowInside && (
-          <line x1={x(now)} y1={laneSleep - 12} x2={x(now)} y2={laneDiaper + 12} stroke={theme.inkSoft} strokeWidth="1" />
-        )}
-      </svg>
-
-      {/* Legend: with five marks, identity never rests on colour alone. */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 14px', marginTop: 4, fontSize: 11, color: theme.inkSoft }}>
-        <span><Key theme={theme} category="night" shape="bar" /> Sleep</span>
-        <span><Key theme={theme} category="nurse" /> Nursing</span>
-        {data.feeds.some((f) => f.type === 'bottle') && (
-          <span><Key theme={theme} category="nurse" shape="ring" /> Bottle</span>
-        )}
-        <span><Key theme={theme} category="wet" shape="tick" /> Wet</span>
-        <span><Key theme={theme} category="poop" shape="tick" /> Poop</span>
-      </div>
-
-      <Muted theme={theme} size={12} style={{ marginTop: 6, color: theme.ink }}>
-        {totals.feeds} {totals.feeds === 1 ? 'feed' : 'feeds'}
-        {gap ? ` · every ~${formatGap(gap)}` : ''}
-        {longest ? ` · longest sleep ${formatDuration(longest.ms)} (${clockTime(longest.start)}–${longest.open ? 'now' : clockTime(longest.end)})` : ''}
-        {` · ${totals.wet} wet · ${totals.poop} poop`}
-      </Muted>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// 3. Small multiples: one metric per panel, one axis each, never two.
-// ---------------------------------------------------------------------------
-
-/** A column with a rounded cap and a square base. */
 /**
  * Sleeps the analytics refused: longer than 16 hours, or ending before
  * they start. Each one would add a full day of sleep to every day it spans.
@@ -511,10 +370,10 @@ const TEMP_RANGES = [
  * it is one quiet line.
  */
 function TemperatureSection({ theme, events, now, store }) {
-  const [rangeKey, setRangeKey] = useState('3d');
+  const [rangeKey, setRangeKey] = useState('24h');
   const [adding, setAdding] = useState(false);
   const [value, setValue] = useState('');
-  const range = TEMP_RANGES.find((r) => r.key === rangeKey) || TEMP_RANGES[1];
+  const range = TEMP_RANGES.find((r) => r.key === rangeKey) || TEMP_RANGES[0];
   const all = useMemo(() => tempReadings(events), [events]);
   const inWeek = all.filter((r) => r.start_ts >= now - 168 * HOUR);
   const accent = categoryColor(theme, 'temp');
