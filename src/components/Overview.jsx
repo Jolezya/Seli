@@ -23,7 +23,7 @@ import {
   HOUR, MINUTE, clockTime, formatDuration, dayLabel, startOfLocalDay, addDays,
   toDateInput, fromDateInput, dayKey, shortDate, timeAgo,
 } from '../lib/time.js';
-import { readings as tempReadings, isFever, FEVER_C, formatTemp } from '../lib/temp.js';
+import { readings as tempReadings, isFever, FEVER_C, formatTemp, toTenths } from '../lib/temp.js';
 
 
 /** The four things the overview tracks, in a fixed order that never changes. */
@@ -207,10 +207,6 @@ function PeriodView({ theme, events, now, usual, rows, period, onChange }) {
           : `A baseline appears after ${BASELINE_MIN_DAYS} full days — ${base.days} so far.`}
       </Muted>
 
-      <SectionLabel theme={theme} style={{ marginTop: 18 }}>
-        {range.rolling ? 'The last 24 hours, hour by hour' : `${label.replace(' so far', '')}, hour by hour`}
-      </SectionLabel>
-      <Timeline theme={theme} events={events} from={range.from} to={range.to} now={now} {...stripProps(range)} />
     </>
   );
 }
@@ -516,16 +512,61 @@ const TEMP_RANGES = [
  */
 function TemperatureSection({ theme, events, now, store }) {
   const [rangeKey, setRangeKey] = useState('3d');
+  const [adding, setAdding] = useState(false);
+  const [value, setValue] = useState('');
   const range = TEMP_RANGES.find((r) => r.key === rangeKey) || TEMP_RANGES[1];
   const all = useMemo(() => tempReadings(events), [events]);
   const inWeek = all.filter((r) => r.start_ts >= now - 168 * HOUR);
   const accent = categoryColor(theme, 'temp');
+  const latest = inWeek.length ? inWeek[inWeek.length - 1] : null;
+  const fever = latest && isFever(latest.amount) && now - latest.start_ts < 12 * HOUR;
+
+  const save = (e) => {
+    e.preventDefault();
+    const tenths = toTenths(value);
+    if (tenths == null) { store.showToast('Enter a temperature between 34 and 43 °C.'); return; }
+    store.logPoint('temp', { amount: tenths });
+    setAdding(false);
+    setValue('');
+  };
+
+  const measure = (
+    <Chip theme={theme} accent={accent} active={adding} onClick={() => setAdding((v) => !v)}>Measure</Chip>
+  );
+
+  const form = adding && (
+    <form onSubmit={save} style={{ display: 'flex', gap: 6, marginTop: 8, alignItems: 'center' }}>
+      {/* A text field, not type="number": iOS rejects the comma a Norwegian
+          keyboard offers as its decimal mark, and the parser takes either. */}
+      <input
+        autoFocus
+        type="text"
+        inputMode="decimal"
+        pattern="[0-9]*[.,]?[0-9]*"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        placeholder="37.2"
+        aria-label="Temperature in °C"
+        style={{
+          flex: '1 1 100px', minWidth: 0, border: `1px solid ${theme.line}`, background: theme.bg,
+          color: theme.ink, borderRadius: 10, padding: '8px 10px', fontSize: 15, fontWeight: 600,
+          fontVariantNumeric: 'tabular-nums',
+        }}
+      />
+      <span style={{ fontSize: 12, color: theme.inkSoft }}>°C</span>
+      <Button theme={theme} tone="accent" type="submit" style={{ padding: '6px 12px' }}>Save</Button>
+    </form>
+  );
 
   if (!inWeek.length) {
     return (
       <div style={{ marginTop: 18 }}>
-        <SectionLabel theme={theme}>Temperature</SectionLabel>
-        <Muted theme={theme}>No readings in the last week. Measure from the care card when she feels warm; the line and the list appear here.</Muted>
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+          <SectionLabel theme={theme} style={{ margin: 0 }}>Temperature</SectionLabel>
+          {measure}
+        </div>
+        {form}
+        <Muted theme={theme} style={{ marginTop: 6 }}>No readings in the last week. Tap Measure when she feels warm; the chart and the list appear here.</Muted>
       </div>
     );
   }
@@ -538,11 +579,21 @@ function TemperatureSection({ theme, events, now, store }) {
     <div style={{ marginTop: 18 }}>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
         <SectionLabel theme={theme} style={{ margin: 0 }}>Temperature</SectionLabel>
-        <div style={{ display: 'flex', gap: 6 }}>
-          {TEMP_RANGES.map((r) => (
-            <Chip key={r.key} theme={theme} accent={accent} active={rangeKey === r.key} onClick={() => setRangeKey(r.key)}>{r.label}</Chip>
-          ))}
+        {measure}
+      </div>
+
+      {form}
+
+      {fever && (
+        <div style={{ fontSize: 11.5, color: theme.warn, marginTop: 8, fontWeight: 600 }}>
+          {formatTemp(latest.amount)} at {clockTime(latest.start_ts)} · {FEVER_C.toFixed(1)} °C or more in a baby this young is a reason to call the doctor or the health line.
         </div>
+      )}
+
+      <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+        {TEMP_RANGES.map((r) => (
+          <Chip key={r.key} theme={theme} accent={accent} active={rangeKey === r.key} onClick={() => setRangeKey(r.key)}>{r.label}</Chip>
+        ))}
       </div>
 
       {shown.length ? (
@@ -555,14 +606,14 @@ function TemperatureSection({ theme, events, now, store }) {
         {listed.map((r, i) => {
           const prev = listed[i + 1] || null;
           const delta = prev ? r.c - prev.c : null;
-          const fever = isFever(r.amount);
+          const hot = isFever(r.amount);
           return (
             <div key={r.id} style={{
               display: 'grid', gridTemplateColumns: 'minmax(84px, auto) 56px 1fr auto', alignItems: 'baseline', columnGap: 8, padding: '6px 0',
               borderTop: i ? `1px solid ${theme.line}` : 'none', fontSize: 12, color: theme.ink,
             }}>
               <span style={{ color: theme.inkSoft, whiteSpace: 'nowrap' }}>{dayLabel(r.start_ts, now)} {clockTime(r.start_ts)}</span>
-              <span style={{ fontWeight: 650, color: fever ? theme.warn : theme.ink, fontVariantNumeric: 'tabular-nums' }}>{formatTemp(r.amount)}</span>
+              <span style={{ fontWeight: 650, color: hot ? theme.warn : theme.ink, fontVariantNumeric: 'tabular-nums' }}>{formatTemp(r.amount)}</span>
               <span style={{ color: theme.inkFaint, fontVariantNumeric: 'tabular-nums', minWidth: 0 }}>
                 {delta == null ? 'first reading' : delta === 0 ? 'no change' : `${delta > 0 ? '+' : '−'}${Math.abs(delta).toFixed(1)} since ${clockTime(prev.start_ts)}`}
               </span>
@@ -579,39 +630,51 @@ function TemperatureSection({ theme, events, now, store }) {
 }
 
 /**
- * Readings on a time axis with hour and day ticks sized to the range, the
- * fever zone shaded, every point labelled that has room. Fixed aspect.
+ * Temperature against time: degrees up the left with its own axis line,
+ * ticks and unit; clock time along the bottom with ticks sized to the range.
+ * The fever zone is shaded behind. Fixed aspect, so nothing stretches.
  */
 function TempChart({ theme, readings, from, now, accent }) {
   const W = 340;
-  const H = 150;
-  const pad = { top: 16, right: 14, bottom: 30, left: 30 };
+  const H = 170;
+  const pad = { top: 18, right: 12, bottom: 34, left: 36 };
   const to = now;
+  const axisY = H - pad.bottom;
   const temps = readings.map((r) => r.c);
-  const minY = Math.floor(Math.min(36.5, ...temps) - 0.4);
-  const maxY = Math.ceil(Math.max(38.5, ...temps) + 0.3);
+  // Always show a normal-to-fever span, extended to whole degrees around the
+  // readings, so the same reading sits at the same height day to day.
+  const minY = Math.floor(Math.min(36, ...temps));
+  const maxY = Math.ceil(Math.max(39, ...temps));
   const x = (ts) => pad.left + ((ts - from) / (to - from)) * (W - pad.left - pad.right);
-  const y = (c) => pad.top + (1 - (c - minY) / (maxY - minY)) * (H - pad.top - pad.bottom);
+  const y = (c) => pad.top + (1 - (c - minY) / (maxY - minY)) * (axisY - pad.top);
   const path = readings.map((r, i) => `${i ? 'L' : 'M'}${x(r.start_ts).toFixed(1)},${y(r.c).toFixed(1)}`).join(' ');
+
+  const degrees = [];
+  for (let g = minY; g <= maxY; g += 1) degrees.push(g);
+  const halves = [];
+  for (let g = minY + 0.5; g < maxY; g += 1) halves.push(g);
+
+  // Time ticks on the local wall clock: every 6h within a day, 12h over three
+  // days, daily over a week. Anything that would collide with "now" is dropped.
   const hours = (to - from) / HOUR;
-  const tickEvery = hours <= 24 ? 6 * HOUR : hours <= 72 ? 12 * HOUR : 24 * HOUR;
+  const stepH = hours <= 24 ? 6 : hours <= 72 ? 12 : 24;
   const ticks = [];
-  const first = Math.ceil(from / tickEvery) * tickEvery;
-  for (let t = first; t < to - HOUR; t += tickEvery) {
-    const d = new Date(t);
-    // Round to the local wall clock so 12-hour ticks land at 00:00 / 12:00.
-    d.setMinutes(0, 0, 0);
-    const local = d.getHours() % (tickEvery / HOUR);
-    if (local !== 0) continue;
-    if (x(d.getTime()) < W - pad.right - 28) ticks.push(d.getTime());
+  const walk = new Date(from);
+  walk.setMinutes(0, 0, 0);
+  while (walk.getTime() <= to) {
+    const ts = walk.getTime();
+    if (ts >= from && walk.getHours() % stepH === 0 && x(ts) < W - pad.right - 26) ticks.push(ts);
+    walk.setHours(walk.getHours() + 1);
   }
-  const gridY = [];
-  for (let g = minY; g <= maxY; g += 1) gridY.push(g);
+
   const latest = readings[readings.length - 1];
   const highest = readings.reduce((m, r) => (r.c > m.c ? r : m), readings[0]);
   const labelled = new Set([latest.id]);
   const taken = [x(latest.start_ts)];
-  if (highest.id !== latest.id && Math.abs(x(highest.start_ts) - taken[0]) >= 30) { labelled.add(highest.id); taken.push(x(highest.start_ts)); }
+  if (highest.id !== latest.id && Math.abs(x(highest.start_ts) - taken[0]) >= 30) {
+    labelled.add(highest.id);
+    taken.push(x(highest.start_ts));
+  }
   for (const r of readings) {
     if (labelled.has(r.id)) continue;
     const px = x(r.start_ts);
@@ -619,29 +682,53 @@ function TempChart({ theme, readings, from, now, accent }) {
   }
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block', marginTop: 8, overflow: 'visible' }} role="img" aria-label="Temperature readings over time">
+    <svg
+      viewBox={`0 0 ${W} ${H}`}
+      style={{ width: '100%', height: 'auto', display: 'block', marginTop: 8, overflow: 'visible' }}
+      role="img"
+      aria-label="Temperature in degrees Celsius against time"
+    >
       {FEVER_C < maxY && (
-        <rect x={pad.left} y={y(maxY)} width={W - pad.left - pad.right} height={Math.max(0, y(FEVER_C) - y(maxY))} fill={categoryTint(theme, 'temp', theme.name === 'night' ? 0.16 : 0.10)} />
+        <rect
+          x={pad.left} y={y(maxY)} width={W - pad.left - pad.right}
+          height={Math.max(0, y(FEVER_C) - y(maxY))}
+          fill={categoryTint(theme, 'temp', theme.name === 'night' ? 0.16 : 0.10)}
+        />
       )}
-      {gridY.map((g) => (
+
+      {/* Degrees: gridline, tick and label per whole degree; a shorter tick per half. */}
+      {degrees.map((g) => (
         <g key={g}>
           <line x1={pad.left} y1={y(g)} x2={W - pad.right} y2={y(g)} stroke={theme.line} strokeWidth="0.75" />
-          <text x={pad.left - 6} y={y(g) + 3} fontSize="8.5" fill={theme.inkFaint} textAnchor="end">{g}°</text>
+          <line x1={pad.left - 4} y1={y(g)} x2={pad.left} y2={y(g)} stroke={theme.inkFaint} strokeWidth="1" />
+          <text x={pad.left - 7} y={y(g) + 3} fontSize="8.5" fill={theme.inkFaint} textAnchor="end" fontVariantNumeric="tabular-nums">{g}</text>
         </g>
       ))}
+      {halves.map((g) => (
+        <line key={g} x1={pad.left - 2.5} y1={y(g)} x2={pad.left} y2={y(g)} stroke={theme.inkFaint} strokeWidth="0.75" />
+      ))}
+      <text x={pad.left - 7} y={pad.top - 7} fontSize="8.5" fill={theme.inkSoft} textAnchor="end" fontWeight="600">°C</text>
+      <line x1={pad.left} y1={pad.top} x2={pad.left} y2={axisY} stroke={theme.inkFaint} strokeWidth="1" />
+
       <line x1={pad.left} y1={y(FEVER_C)} x2={W - pad.right} y2={y(FEVER_C)} stroke={theme.warn} strokeWidth="1" strokeDasharray="4 3" />
-      {ticks.map((t) => {
-        const d = new Date(t);
-        const label = d.getHours() === 0 ? shortDate(t) : clockTime(t);
-        return (
-          <g key={t}>
-            <line x1={x(t)} y1={pad.top} x2={x(t)} y2={H - pad.bottom} stroke={theme.line} strokeWidth="0.75" />
-            <text x={x(t)} y={H - pad.bottom + 11} fontSize="8.5" fill={theme.inkFaint} textAnchor="middle">{label}</text>
-          </g>
-        );
-      })}
-      <text x={W - pad.right} y={H - pad.bottom + 11} fontSize="8.5" fill={theme.inkFaint} textAnchor="end">now</text>
-      <text x={pad.left} y={H - 4} fontSize="8.5" fill={theme.inkFaint}>{shortDate(from)} {clockTime(from)}</text>
+
+      {/* Time along the bottom. */}
+      <line x1={pad.left} y1={axisY} x2={W - pad.right} y2={axisY} stroke={theme.inkFaint} strokeWidth="1" />
+      {ticks.map((t) => (
+        <g key={t}>
+          <line x1={x(t)} y1={pad.top} x2={x(t)} y2={axisY} stroke={theme.line} strokeWidth="0.75" />
+          <line x1={x(t)} y1={axisY} x2={x(t)} y2={axisY + 4} stroke={theme.inkFaint} strokeWidth="1" />
+          <text x={x(t)} y={axisY + 14} fontSize="8.5" fill={theme.inkFaint} textAnchor="middle">
+            {new Date(t).getHours() === 0 ? shortDate(t) : clockTime(t)}
+          </text>
+        </g>
+      ))}
+      <line x1={W - pad.right} y1={axisY} x2={W - pad.right} y2={axisY + 4} stroke={theme.inkFaint} strokeWidth="1" />
+      <text x={W - pad.right} y={axisY + 14} fontSize="8.5" fill={theme.inkFaint} textAnchor="end">now</text>
+      <text x={pad.left} y={H - 3} fontSize="8.5" fill={theme.inkFaint}>
+        {shortDate(from)} {clockTime(from)}
+      </text>
+
       {readings.length > 1 && <path d={path} fill="none" stroke={accent} strokeWidth="1.5" strokeLinejoin="round" />}
       {readings.map((r) => (
         <g key={r.id}>
