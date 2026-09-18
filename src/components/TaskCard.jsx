@@ -9,8 +9,6 @@ import { clockTime, formatDuration, timeAgo, whenLabel, MINUTE } from '../lib/ti
 import { eventsOnDay, openSession, totalDurationOnDay, lastMedicine, recentMedicineNames } from '../lib/events.js';
 import { msLeftInDay, leftLabel, taskTone } from '../lib/tasks.js';
 import { bathSchedule, toggleDay, WEEKDAYS, DEFAULT_BATH_DAYS } from '../lib/bath.js';
-import { toTenths, formatTemp, lastReading, isFever, FEVER_C } from '../lib/temp.js';
-import { HOUR } from '../lib/time.js';
 
 export const CARERS = ['Kay', 'Maren', 'Both'];
 export const TUMMY_GOALS = [10, 15, 20, 30];
@@ -184,7 +182,6 @@ export default function TaskCard({ theme, events, store, now }) {
       </div>
 
       <Medicine theme={theme} events={events} store={store} now={now} />
-      <Temperature theme={theme} events={events} store={store} now={now} />
 
       <BathDays theme={theme} days={bathDays} onToggle={(d) => store.setPrefs({ bathDays: toggleDay(bathDays, d) })} />
     </Card>
@@ -249,77 +246,6 @@ function Medicine({ theme, events, store, now }) {
           <Button theme={theme} tone="accent" type="submit" disabled={!name.trim()} style={{ padding: '6px 12px' }}>Save</Button>
         </form>
       )}
-    </div>
-  );
-}
-
-/**
- * Temperature, for when she is unwell: the last reading with its time, and a
- * line of the readings over the last three days. The line appears only while
- * there are recent readings, so the row is one quiet line the rest of the
- * time. Readings are stored in tenths of a degree (lib/temp.js).
- */
-function Temperature({ theme, events, store, now }) {
-  const [open, setOpen] = useState(false);
-  const [value, setValue] = useState('');
-  const last = lastReading(events);
-  const fever = last && isFever(last.amount) && now - last.start_ts < 12 * HOUR;
-
-  const save = (e) => {
-    e.preventDefault();
-    const tenths = toTenths(value);
-    if (tenths == null) { store.showToast('Enter a temperature between 34 and 43 °C.'); return; }
-    haptic();
-    store.logPoint('temp', { amount: tenths });
-    setOpen(false);
-    setValue('');
-  };
-
-  return (
-    <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${theme.line}` }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-        <Emoji char="🌡️" size={18} />
-        <div style={{ flex: 1, minWidth: 140 }}>
-          <div style={{ fontSize: 13.5, color: theme.ink, fontWeight: 500 }}>Temperature</div>
-          <div style={{ fontSize: 12, color: last ? (fever ? theme.warn : theme.inkSoft) : theme.inkFaint, marginTop: 1, fontWeight: fever ? 600 : 400 }}>
-            {last
-              ? `${formatTemp(last.amount)} · ${whenLabel(last.start_ts, now)} · ${timeAgo(last.start_ts, now)}`
-              : 'no reading yet'}
-          </div>
-        </div>
-        <Button theme={theme} tone={open ? 'accent' : 'plain'} onClick={() => setOpen((v) => !v)} style={{ padding: '6px 12px' }}>Measure</Button>
-      </div>
-
-      {open && (
-        <form onSubmit={save} style={{ display: 'flex', gap: 6, marginTop: 8, alignItems: 'center' }}>
-          {/* A text field, not type="number": iOS rejects the comma that a
-              Norwegian keyboard offers as its decimal mark, and the parser
-              accepts either. inputMode still brings up the numeric pad. */}
-          <input
-            autoFocus
-            type="text"
-            inputMode="decimal"
-            pattern="[0-9]*[.,]?[0-9]*"
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            placeholder="37.2"
-            aria-label="Temperature in °C"
-            style={{
-              flex: '1 1 100px', minWidth: 0, border: `1px solid ${theme.line}`, background: theme.bg,
-              color: theme.ink, borderRadius: 10, padding: '8px 10px', fontSize: 15, fontWeight: 600, fontVariantNumeric: 'tabular-nums',
-            }}
-          />
-          <span style={{ fontSize: 12, color: theme.inkSoft }}>°C</span>
-          <Button theme={theme} tone="accent" type="submit" style={{ padding: '6px 12px' }}>Save</Button>
-        </form>
-      )}
-
-      {fever && (
-        <div style={{ fontSize: 11.5, color: theme.warn, marginTop: 6 }}>
-          {FEVER_C.toFixed(1)} °C or more in a baby this young is a reason to call the doctor or the health line.
-        </div>
-      )}
-
     </div>
   );
 }
