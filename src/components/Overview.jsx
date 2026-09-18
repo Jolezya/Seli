@@ -634,6 +634,11 @@ function TemperatureSection({ theme, events, now, store }) {
  * ticks and unit; clock time along the bottom with ticks sized to the range.
  * The fever zone is shaded behind. Fixed aspect, so nothing stretches.
  */
+/** Rough width of a label at the chart's 8.5–9px type, good enough to pack by. */
+function textWidth(text) {
+  return text.length * 5.1;
+}
+
 function TempChart({ theme, readings, from, now, accent }) {
   const W = 340;
   const H = 170;
@@ -663,22 +668,51 @@ function TempChart({ theme, readings, from, now, accent }) {
   walk.setMinutes(0, 0, 0);
   while (walk.getTime() <= to) {
     const ts = walk.getTime();
-    if (ts >= from && walk.getHours() % stepH === 0 && x(ts) < W - pad.right - 26) ticks.push(ts);
+    if (ts >= from && walk.getHours() % stepH === 0) {
+      const text = new Date(ts).getHours() === 0 ? shortDate(ts) : clockTime(ts);
+      // "now" owns the right end; a tick label may not reach into it.
+      if (x(ts) + textWidth(text) / 2 < W - pad.right - 18) ticks.push(ts);
+    }
     walk.setHours(walk.getHours() + 1);
   }
 
+  // Every reading carries its value. Each label takes the first slot around
+  // its point — above, below, right, left, then further out — that no label
+  // already occupies, so readings minutes apart stay readable. The latest and
+  // the highest choose first, since those are the two anyone looks for.
   const latest = readings[readings.length - 1];
   const highest = readings.reduce((m, r) => (r.c > m.c ? r : m), readings[0]);
-  const labelled = new Set([latest.id]);
-  const taken = [x(latest.start_ts)];
-  if (highest.id !== latest.id && Math.abs(x(highest.start_ts) - taken[0]) >= 30) {
-    labelled.add(highest.id);
-    taken.push(x(highest.start_ts));
-  }
-  for (const r of readings) {
-    if (labelled.has(r.id)) continue;
+  const order = [latest, ...(highest.id === latest.id ? [] : [highest]), ...readings.filter((r) => r.id !== latest.id && r.id !== highest.id)];
+  // The markers are obstacles too: a value printed across a dot is unreadable.
+  const placed = readings.map((r) => ({ x1: x(r.start_ts) - 5, y1: y(r.c) - 5, x2: x(r.start_ts) + 5, y2: y(r.c) + 5 }));
+  const labels = {};
+  const free = (box) => placed.every((b) => b.x2 <= box.x1 || b.x1 >= box.x2 || b.y2 <= box.y1 || b.y1 >= box.y2);
+  for (const r of order) {
+    const text = r.c.toFixed(1);
+    const w = textWidth(text) + 3;
     const px = x(r.start_ts);
-    if (taken.every((tx) => Math.abs(px - tx) >= 30)) { labelled.add(r.id); taken.push(px); }
+    const py = y(r.c);
+    // Candidate slots on a small grid around the point, nearest first and
+    // above preferred, so a label lands as close to its dot as it can.
+    const stepX = w / 2 + 6;
+    const spots = [];
+    for (let ix = -3; ix <= 3; ix++) {
+      for (let iy = -5; iy <= 5; iy++) {
+        if (ix === 0 && iy === 0) continue;
+        const dy = iy < 0 ? -8 + (iy + 1) * 11 : iy > 0 ? 15 + (iy - 1) * 11 : 3.5;
+        spots.push({ x: px + ix * stepX, y: py + dy, cost: Math.abs(iy) + Math.abs(ix) * 1.2 + (iy < 0 ? 0 : 0.3) });
+      }
+    }
+    spots.sort((m, n) => m.cost - n.cost);
+    let chosen = null;
+    for (const spot of spots) {
+      const cx = Math.max(pad.left + w / 2, Math.min(W - pad.right - w / 2, spot.x));
+      const cy = Math.max(pad.top + 8, Math.min(axisY - 2, spot.y));
+      const box = { x1: cx - w / 2, y1: cy - 9, x2: cx + w / 2, y2: cy + 2 };
+      if (free(box)) { placed.push(box); chosen = { x: cx, y: cy }; break; }
+    }
+    // Nowhere free: put it above anyway rather than drop the value.
+    labels[r.id] = chosen || { x: px, y: Math.max(pad.top + 8, py - 8) };
   }
 
   return (
@@ -735,13 +769,11 @@ function TempChart({ theme, readings, from, now, accent }) {
           <circle cx={x(r.start_ts)} cy={y(r.c)} r="3.2" fill={isFever(r.amount) ? theme.warn : accent} stroke={theme.surface} strokeWidth="1.5">
             <title>{`${r.c.toFixed(1)} °C · ${shortDate(r.start_ts)} ${clockTime(r.start_ts)}`}</title>
           </circle>
-          {labelled.has(r.id) && (
-            <text
-              x={Math.max(pad.left + 10, Math.min(W - pad.right - 10, x(r.start_ts)))} y={y(r.c) - 7}
-              fontSize="9" fill={theme.inkSoft} textAnchor="middle" fontVariantNumeric="tabular-nums"
-              stroke={theme.surface} strokeWidth="3" paintOrder="stroke"
-            >{r.c.toFixed(1)}</text>
-          )}
+          <text
+            x={labels[r.id].x} y={labels[r.id].y}
+            fontSize="9" fill={isFever(r.amount) ? theme.warn : theme.inkSoft} textAnchor="middle"
+            fontVariantNumeric="tabular-nums" stroke={theme.surface} strokeWidth="3" paintOrder="stroke"
+          >{r.c.toFixed(1)}</text>
         </g>
       ))}
     </svg>
