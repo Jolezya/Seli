@@ -111,6 +111,7 @@ export default function App() {
           onRefresh={store.refresh}
           onToggleTheme={toggleTheme}
           push={{ available: PUSH_AVAILABLE, enabled: pushEnabled, onToggle: togglePush }}
+          birthDate={store.prefs.birthDate}
         />
         <TaskCard theme={theme} events={store.events} store={store} now={now} />
         <Tiles theme={theme} events={store.events} store={store} now={now} />

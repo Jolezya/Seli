@@ -155,3 +155,31 @@ export function whenLabel(ts, now = Date.now()) {
   const weekday = new Date(ts).toLocaleDateString(undefined, { weekday: 'short' });
   return `${weekday} ${clockTime(ts)}`;
 }
+
+/** Days in an average month — the divisor every growth chart uses. */
+export const MONTH_DAYS = 30.4375;
+
+/**
+ * How old she is, in the two units parents actually trade in: weeks up to
+ * two years, with the month figure alongside once a month has passed, since
+ * "3 weeks (0.7 months)" tells nobody anything. Counted in whole local days,
+ * so it ticks over at midnight rather than at the hour she was born.
+ */
+export function ageText(birthTs, now = Date.now()) {
+  if (birthTs == null) return null;
+  const days = daysBetween(birthTs, now);
+  if (days < 0) return null;
+  if (days === 0) return 'born today';
+  if (days < 7) return `${days} day${days === 1 ? '' : 's'} old`;
+
+  const weeks = Math.floor(days / 7);
+  const months = days / MONTH_DAYS;
+  if (days < 730) {
+    const head = `${weeks} week${weeks === 1 ? '' : 's'}`;
+    return months >= 1 ? `${head} (${months.toFixed(1)} months)` : head;
+  }
+
+  const years = Math.floor(months / 12);
+  const rest = Math.floor(months - years * 12);
+  return `${years} year${years === 1 ? '' : 's'}${rest ? ` ${rest} month${rest === 1 ? '' : 's'}` : ''}`;
+}
