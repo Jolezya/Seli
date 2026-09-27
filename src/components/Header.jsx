@@ -3,7 +3,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { STATUS } from '../lib/sync.js';
-import { timeAgo, clockTime } from '../lib/time.js';
+import { timeAgo, clockTime, ageText, fromDateInput } from '../lib/time.js';
 import { Muted } from '../ui.jsx';
 
 /** Colour and words for each sync state (spec §9.4). */
@@ -36,7 +36,7 @@ export function statusPresentation(theme, status) {
   }
 }
 
-export default function Header({ theme, status, onRefresh, onToggleTheme, push }) {
+export default function Header({ theme, status, onRefresh, onToggleTheme, push, birthDate }) {
   const [expanded, setExpanded] = useState(false);
   const [spinning, setSpinning] = useState(false);
   const [clock, setClock] = useState(() => new Date());
@@ -65,6 +65,10 @@ export default function Header({ theme, status, onRefresh, onToggleTheme, push }
   // and a header reading "4:43 PM" above tiles reading "16:43" would be worse
   // than either format on its own.
   const time = clockTime(clock.getTime());
+  // Her age, from the birth date the growth chart already keeps. It sits under
+  // the name because "how old is she now?" is asked far more often than any
+  // number on this screen, and every health visit opens with it.
+  const age = ageText(fromDateInput(birthDate), clock.getTime());
 
   const refresh = async () => {
     setSpinning(true);
@@ -94,7 +98,14 @@ export default function Header({ theme, status, onRefresh, onToggleTheme, push }
           <h1 style={{
             margin: 0, fontSize: 26, fontWeight: 700, letterSpacing: '-0.02em', color: theme.ink,
           }}>Seli</h1>
-          <Muted theme={theme} style={{ marginTop: 2 }}>
+          {age && (
+            <div style={{
+              fontSize: 13, fontWeight: 600, color: theme.ink, marginTop: 2,
+              fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap',
+              overflow: 'hidden', textOverflow: 'ellipsis',
+            }}>{age}</div>
+          )}
+          <Muted theme={theme} style={{ marginTop: age ? 1 : 2 }}>
             {today} · <span style={{ fontVariantNumeric: 'tabular-nums' }}>{time}</span>
           </Muted>
         </div>

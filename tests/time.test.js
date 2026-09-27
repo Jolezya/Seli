@@ -80,3 +80,29 @@ describe('whenLabel', () => {
     expect(label.length).toBeGreaterThan(' 18:40'.length);      // carries a weekday
   });
 });
+
+describe('ageText', async () => {
+  const { ageText } = await import('../src/lib/time.js');
+  const born = new Date(2026, 5, 22, 14, 30).getTime();     // 22 June 2026
+  const on = (y, m, d, h = 9) => new Date(y, m - 1, d, h).getTime();
+
+  it('counts the day she was born as day zero', () => {
+    expect(ageText(born, on(2026, 6, 22, 23))).toBe('born today');
+    expect(ageText(born, on(2026, 6, 23))).toBe('1 day old');
+    expect(ageText(born, on(2026, 6, 26))).toBe('4 days old');
+  });
+  it('switches to weeks after the first week, months once one has passed', () => {
+    expect(ageText(born, on(2026, 6, 29))).toBe('1 week');
+    expect(ageText(born, on(2026, 7, 13))).toBe('3 weeks');
+    expect(ageText(born, on(2026, 7, 23))).toBe('4 weeks (1.0 months)');
+    expect(ageText(born, on(2026, 9, 27))).toBe('13 weeks (3.2 months)');
+  });
+  it('gives years once weeks stop meaning anything', () => {
+    expect(ageText(born, on(2028, 6, 22))).toBe('2 years');
+    expect(ageText(born, on(2028, 9, 22))).toBe('2 years 3 months');
+  });
+  it('has nothing to say without a birth date, or before it', () => {
+    expect(ageText(null, on(2026, 9, 27))).toBeNull();
+    expect(ageText(born, on(2026, 6, 1))).toBeNull();
+  });
+});
