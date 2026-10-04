@@ -36,7 +36,7 @@ export function statusPresentation(theme, status) {
   }
 }
 
-export default function Header({ theme, status, onRefresh, onToggleTheme, push, birthDate }) {
+export default function Header({ theme, status, onRefresh, onToggleTheme, push, birthDate, lock }) {
   const [expanded, setExpanded] = useState(false);
   const [spinning, setSpinning] = useState(false);
   const [clock, setClock] = useState(() => new Date());
@@ -138,6 +138,17 @@ export default function Header({ theme, status, onRefresh, onToggleTheme, push, 
               transition: 'transform 400ms ease',
             }}
           >↻</button>
+
+          {lock?.supported && (
+            <button
+              type="button"
+              onClick={lock.onToggle}
+              title={lock.on ? 'Running sleeps show on the lock screen' : 'Show running sleeps on the lock screen'}
+              aria-label={lock.on ? 'Lock screen is on' : 'Turn on the lock screen'}
+              aria-pressed={lock.on}
+              style={{ ...iconButton, borderColor: lock.on ? theme.good : theme.line, opacity: lock.on ? 1 : 0.6 }}
+            >🔒</button>
+          )}
 
           {push?.available && (
             <button

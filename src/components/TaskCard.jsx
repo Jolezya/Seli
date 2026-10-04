@@ -9,6 +9,7 @@ import { clockTime, formatDuration, timeAgo, whenLabel, MINUTE } from '../lib/ti
 import { eventsOnDay, openSession, totalDurationOnDay, lastMedicine, recentMedicineNames } from '../lib/events.js';
 import { msLeftInDay, leftLabel, taskTone } from '../lib/tasks.js';
 import { bathSchedule, toggleDay, WEEKDAYS, DEFAULT_BATH_DAYS } from '../lib/bath.js';
+import { askIfUndecided } from '../lib/lockscreen.js';
 
 export const CARERS = ['Kay', 'Maren', 'Both'];
 export const TUMMY_GOALS = [10, 15, 20, 30];
@@ -137,7 +138,11 @@ export default function TaskCard({ theme, events, store, now }) {
             <Button
               theme={theme}
               tone={tummyOpen ? 'accent' : 'plain'}
-              onClick={() => { haptic(); store.toggleSession('tummy'); }}
+              onClick={() => {
+                haptic();
+                if (!tummyOpen) askIfUndecided(store.prefs.lockScreen !== false);
+                store.toggleSession('tummy');
+              }}
               style={{ padding: '6px 12px' }}
             >{tummyOpen ? 'Going…' : 'Start'}</Button>
           </div>
