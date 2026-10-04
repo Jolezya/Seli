@@ -82,7 +82,7 @@ describe('series', () => {
   });
   it('her curve follows her z-score', () => {
     const c = curveSeries('girl', 1, 10, 20);
-    expect(c[0].grams).toBe(weightAtZ('girl', 10, 1));
+    expect(Math.round(c[0].value)).toBe(weightAtZ('girl', 10, 1));
     expect(curveSeries('girl', null, 0, 10)).toEqual([]);
   });
   it('dayCurveReaches finds the first qualifying day', () => {
@@ -148,5 +148,70 @@ describe('weighInLine', () => {
     const s = growthSettings({ birthDate: '2026-06-22', sex: 'girl', dueDate: '2026-07-09', correctAge: true });
     expect(s).toMatchObject({ sex: 'girl', correct: true });
     expect(growthSettings({}).sex).toBe('girl');
+  });
+});
+
+describe('length and head', async () => {
+  const {
+    measureSummary, weightForLength, parseMeasure, formatMeasure, formatChange, visitLine, bandSeries, MEASURES,
+  } = await import('../src/lib/growth.js');
+  const { lmsFor, valueAt } = await import('../src/lib/who.js');
+  const m = (id, type, ts, amount) => ({ id, type, start_ts: ts, end_ts: null, amount, side: null, descr: null });
+  const settings = { birthTs: BIRTH, sex: 'girl', dueTs: null, correct: false };
+
+  it('reads the WHO length and head tables at their published medians', () => {
+    expect(lmsFor('lhfa', 'girl', 0)[1]).toBe(49.1477);
+    expect(lmsFor('hcfa', 'girl', 0)[1]).toBe(33.8787);
+    expect(lmsFor('hcfa', 'boy', 0)[1]).toBe(34.4618);
+    // Weight-for-length is indexed by length in 0.1 cm steps from 45 cm.
+    expect(lmsFor('wfl', 'girl', 45)[1]).toBe(2.4607);
+    expect(valueAt('lhfa', 'girl', 0, 0)).toBeCloseTo(49.15, 2);
+  });
+  it('places length and head on their charts, in millimetres', () => {
+    const ev = [m('l0', 'length', BIRTH, 491), m('l1', 'length', noon(2026, 9, 1), 600)];
+    const s = measureSummary(ev, 'length', settings, noon(2026, 9, 6));
+    expect(s.latest.amount).toBe(600);
+    expect(s.change).toBe(109);
+    expect(s.sinceBirth).toBe(109);
+    expect(s.first.pct).toBeGreaterThan(45);
+    expect(s.first.pct).toBeLessThan(50);
+    expect(s.today.onCurve).toBeGreaterThan(600);
+    const h = measureSummary([m('h', 'head', noon(2026, 9, 1), 395)], 'head', settings, noon(2026, 9, 6));
+    expect(h.pct).toBeGreaterThan(20);
+    expect(h.pct).toBeLessThan(80);
+    expect(h.trend).toBeNull();
+  });
+  it('bands come back in the stored unit', () => {
+    const b = bandSeries('girl', 0, 0, 1, 'head')[0];
+    expect(b.med).toBeCloseTo(338.787, 3);
+    expect(b.lo2).toBeLessThan(b.med);
+  });
+  it('pairs the latest length with the nearest weigh-in for weight-for-length', () => {
+    const ev = [m('l', 'length', noon(2026, 9, 1), 600), m('w', 'weight', noon(2026, 8, 30), 5900), m('w2', 'weight', noon(2026, 7, 1), 4000)];
+    const r = weightForLength(ev, 'girl');
+    expect(r.weight.id).toBe('w');
+    expect(r.gapDays).toBe(2);
+    expect(r.verdict).toBe('proportion');
+    expect(weightForLength([m('l', 'length', noon(2026, 9, 1), 600), m('w2', 'weight', noon(2026, 7, 1), 4000)], 'girl')).toBeNull();
+    expect(weightForLength([m('l', 'length', noon(2026, 9, 1), 600), m('w', 'weight', noon(2026, 9, 1), 3000)], 'girl').verdict).toBe('light');
+  });
+  it('parses what was typed, comma or point, and refuses nonsense', () => {
+    expect(parseMeasure('length', '61,2')).toBe(612);
+    expect(parseMeasure('head', '40.5')).toBe(405);
+    expect(parseMeasure('weight', '5580')).toBe(5580);
+    expect(parseMeasure('length', '6.1')).toBeNull();
+    expect(parseMeasure('head', '')).toBeNull();
+    expect(parseMeasure('weight', 'abc')).toBeNull();
+    expect(MEASURES.length.indicator).toBe('lhfa');
+  });
+  it('formats values and changes', () => {
+    expect(formatMeasure('length', 612)).toBe('61.2 cm');
+    expect(formatMeasure('weight', 5570)).toBe('5,570 g');
+    expect(formatChange('head', -5)).toBe('−0.5 cm');
+    expect(formatChange('weight', 410)).toBe('+410 g');
+  });
+  it('sums up a clinic visit with each percentile', () => {
+    const line = visitLine(settings, noon(2026, 9, 1), { weight: 5580, length: 600, head: null });
+    expect(line).toMatch(/^5,580 g \(\d+(st|nd|rd|th)\) · 60\.0 cm \(\d+(st|nd|rd|th)\)$/);
   });
 });

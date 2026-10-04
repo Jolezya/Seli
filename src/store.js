@@ -39,6 +39,8 @@ const DEFAULT_PREFS = {
   bathDays: [3, 6],
   // Show a running sleep or tummy time on the lock screen (lib/lockscreen.js).
   lockScreen: true,
+  // Which tab the Growth card opens on: weight, length or head.
+  growthTab: 'weight',
 };
 
 /** Periodic safety-net flush + pull, in case realtime or a retry was missed. */
@@ -226,6 +228,21 @@ export function useStore() {
    * Record a weigh-in. One per day: an entry for a date that already has one
    * UPDATES it in place rather than adding a duplicate (spec §7).
    */
+  /**
+   * Length or head (millimetres) or weight (grams) for a date: one per type
+   * per day, stamped at local noon, a second entry the same day UPDATING the
+   * first — the same rule weigh-ins have always followed (spec §7).
+   */
+  const setMeasure = useCallback((type, dateTs, amount) => {
+    const ts = localNoon(dateTs);
+    const n = Math.round(Number(amount));
+    if (!Number.isFinite(n) || n <= 0) return null;
+    const key = dayKey(ts);
+    const existing = events.find((e) => e.type === type && e.amount != null && dayKey(e.start_ts) === key);
+    if (existing) return update(existing.id, { amount: n, start_ts: ts });
+    return log(type, { start_ts: ts, amount: n });
+  }, [events, log, update]);
+
   const setWeight = useCallback((dateTs, grams) => {
     const ts = localNoon(dateTs);
     const amount = Math.round(Number(grams));
@@ -310,13 +327,13 @@ export function useStore() {
 
   return useMemo(() => ({
     events, prefs, status, toast,
-    log, logPoint, toggleSession, toggleSleep, bumpLast, update, remove, setWeight,
+    log, logPoint, toggleSession, toggleSleep, bumpLast, update, remove, setWeight, setMeasure,
     backup, restore, clearData, refresh, setPrefs, showToast, dismissToast,
     configured: engine.configured,
     client: engine.client,
   }), [
     events, prefs, status, toast, log, logPoint, toggleSession, toggleSleep, bumpLast,
-    update, remove, setWeight, backup, restore, clearData, refresh, setPrefs,
+    update, remove, setWeight, setMeasure, backup, restore, clearData, refresh, setPrefs,
     showToast, dismissToast, engine,
   ]);
 }

@@ -18,6 +18,8 @@ const CATEGORY = {
   bath:     { day: '#2E6FD6', night: '#7AAEFF' },
   medicine: { day: '#B33A4E', night: '#F28A9B' },
   temp:     { day: '#C2410C', night: '#FB923C' },
+  length:   { day: '#7A46C4', night: '#B58BF0' },
+  head:     { day: '#7A46C4', night: '#B58BF0' },
 };
 
 const day = {
