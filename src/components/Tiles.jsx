@@ -13,6 +13,7 @@ import { predictNext, windowTotals } from '../lib/analytics.js';
 import { formatGrams } from '../lib/weight.js';
 import { bathSchedule, bathHint, DEFAULT_BATH_DAYS } from '../lib/bath.js';
 import { growthSummary, growthSettings } from '../lib/growth.js';
+import { askIfUndecided } from '../lib/lockscreen.js';
 import { shortDate } from '../lib/time.js';
 
 /**
@@ -113,7 +114,11 @@ function Tile({ tile, theme, events, store, now, chooserOpen, onOpenChooser }) {
 
   const isPoop = tile.key === 'poop';
   const handleTap = () => {
-    if (isSleep) { store.toggleSleep(); return; }
+    if (isSleep) {
+      if (!running) askIfUndecided(store.prefs.lockScreen !== false);
+      store.toggleSleep();
+      return;
+    }
     if (isWeight) { onOpenChooser(!chooserOpen); return; }
     // A tap on the poop tile is the ordinary full diaper; the Small pill in
     // its corner logs the small one.

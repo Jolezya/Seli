@@ -12,6 +12,9 @@ import DayLog from './components/DayLog.jsx';
 import Toast from './components/Toast.jsx';
 import { ErrorBanner, installErrorReporter } from './components/ErrorReport.jsx';
 import { PUSH_AVAILABLE, currentSubscription, subscribe, unsubscribe } from './lib/push.js';
+import {
+  LOCKSCREEN_SUPPORTED, LOCKSCREEN_EVENT, lockPermission, syncLockScreen, restoreOnHide,
+} from './lib/lockscreen.js';
 
 /** Types a home-screen shortcut may log via ?log= (spec §10). */
 const SHORTCUT_TYPES = ['wet', 'poop', 'nurse', 'massage', 'exercise'];
@@ -20,6 +23,7 @@ export default function App() {
   const store = useStore();
   const [now, setNow] = useState(() => Date.now());
   const [pushEnabled, setPushEnabled] = useState(false);
+  const [lockPerm, setLockPerm] = useState(() => lockPermission());
   const [problems, setProblems] = useState([]);
   const shortcutHandled = useRef(false);
 
@@ -71,6 +75,44 @@ export default function App() {
     currentSubscription().then((sub) => setPushEnabled(Boolean(sub))).catch(() => {});
   }, []);
 
+  // The lock screen follows the events: a session starting puts Seli there,
+  // one ending (on this phone, or the other one once it syncs) takes it off.
+  const lockOn = store.prefs.lockScreen !== false;
+  const eventsRef = useRef(store.events);
+  eventsRef.current = store.events;
+  useEffect(() => { syncLockScreen(store.events, lockOn); }, [store.events, lockOn, lockPerm]);
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') restoreOnHide(eventsRef.current, lockOn);
+      else { setLockPerm(lockPermission()); syncLockScreen(eventsRef.current, lockOn); }
+    };
+    const onPermission = () => setLockPerm(lockPermission());
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener(LOCKSCREEN_EVENT, onPermission);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener(LOCKSCREEN_EVENT, onPermission);
+    };
+  }, [lockOn]);
+
+  const toggleLock = async () => {
+    const perm = lockPermission();
+    if (perm === 'denied') {
+      store.showToast('Notifications are blocked for Seli. Allow them in Settings › Notifications › Seli, then tap again.', null, 9000);
+      return;
+    }
+    if (perm === 'default') {
+      const answer = await Notification.requestPermission();
+      setLockPerm(answer);
+      if (answer !== 'granted') { store.showToast('Without notifications Seli cannot show on the lock screen.'); return; }
+      store.setPrefs({ lockScreen: true });
+      store.showToast('A running sleep or tummy time will show on the lock screen ✓');
+      return;
+    }
+    store.setPrefs({ lockScreen: !lockOn });
+    store.showToast(lockOn ? 'Lock screen off' : 'A running sleep or tummy time will show on the lock screen ✓');
+  };
+
   const togglePush = async () => {
     const result = pushEnabled
       ? await unsubscribe(store.client)
@@ -112,6 +154,7 @@ export default function App() {
           onToggleTheme={toggleTheme}
           push={{ available: PUSH_AVAILABLE, enabled: pushEnabled, onToggle: togglePush }}
           birthDate={store.prefs.birthDate}
+          lock={{ supported: LOCKSCREEN_SUPPORTED, on: lockOn && lockPerm === 'granted', onToggle: toggleLock }}
         />
         <TaskCard theme={theme} events={store.events} store={store} now={now} />
         <Tiles theme={theme} events={store.events} store={store} now={now} />

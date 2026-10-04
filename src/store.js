@@ -37,6 +37,8 @@ const DEFAULT_PREFS = {
   correctAge: true,
   // Scheduled bath days, JS weekday numbers (0 = Sunday). Wed and Sat.
   bathDays: [3, 6],
+  // Show a running sleep or tummy time on the lock screen (lib/lockscreen.js).
+  lockScreen: true,
 };
 
 /** Periodic safety-net flush + pull, in case realtime or a retry was missed. */
