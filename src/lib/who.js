@@ -1,50 +1,89 @@
-// WHO Child Growth Standards, weight-for-age, birth to two years.
+// WHO Child Growth Standards: weight, length and head for age, birth to two
+// years, and weight for length.
 //
-// The tables are the WHO's daily LMS parameters (src/data/who-wfa-*.json): at
-// each completed day of age, a Box-Cox power L, a median M (kg) and a
-// coefficient of variation S. A weight becomes a z-score with
-//   z = ((w / M)^L − 1) / (L · S)          (L ≠ 0; ln(w / M) / S when L = 0)
-// and a z-score becomes a weight with the inverse. Percentiles are the normal
+// The tables are the WHO's LMS parameters (src/data/who-*.json): at each
+// completed day of age (or each 0.1 cm of length), a Box-Cox power L, a median M (kg or cm) and a
+// coefficient of variation S. A measurement becomes a z-score with
+//   z = ((v / M)^L − 1) / (L · S)          (L ≠ 0; ln(v / M) / S when L = 0)
+// and a z-score becomes a measurement with the inverse. Percentiles are the normal
 // CDF of z. This is exactly the arithmetic behind the printed charts, so the
 // number here matches the one a health nurse reads off paper.
 
-import girls from '../data/who-wfa-girls.json';
-import boys from '../data/who-wfa-boys.json';
+import wfaGirls from '../data/who-wfa-girls.json';
+import wfaBoys from '../data/who-wfa-boys.json';
+import lhfaGirls from '../data/who-lhfa-girls.json';
+import lhfaBoys from '../data/who-lhfa-boys.json';
+import hcfaGirls from '../data/who-hcfa-girls.json';
+import hcfaBoys from '../data/who-hcfa-boys.json';
+import wflGirls from '../data/who-wfl-girls.json';
+import wflBoys from '../data/who-wfl-boys.json';
 
-const TABLES = { girl: girls.lms, boy: boys.lms };
+/**
+ * Each indicator's tables and the axis they are indexed by. Age-indexed
+ * tables step one day from birth; weight-for-length steps 0.1 cm from 45 cm,
+ * and is read by length, so corrected age plays no part in it.
+ *   wfa  — weight (kg) for age      lhfa — length (cm) for age
+ *   hcfa — head (cm) for age        wfl  — weight (kg) for length
+ */
+const TABLES = {
+  wfa: { girl: wfaGirls.lms, boy: wfaBoys.lms, start: 0, step: 1 },
+  lhfa: { girl: lhfaGirls.lms, boy: lhfaBoys.lms, start: 0, step: 1 },
+  hcfa: { girl: hcfaGirls.lms, boy: hcfaBoys.lms, start: 0, step: 1 },
+  wfl: { girl: wflGirls.lms, boy: wflBoys.lms, start: wflGirls.start, step: wflGirls.step },
+};
 
 export const MAX_AGE_DAYS = 730;
 export const SEXES = ['girl', 'boy'];
+export const INDICATORS = Object.keys(TABLES);
 
 /** The bands the chart draws, as z-scores, and how the printed charts name them. */
 export const BAND_Z = { outer: 2, inner: 1 };
 export const MAJOR_LINES = [-2, -1, 0, 1, 2];   // 3rd · 15th · 50th · 85th · 97th
 
-/** [L, M, S] for a sex at an age, clamped to the table. Null for a bad sex. */
-export function lmsAt(sex, ageDays) {
-  const table = TABLES[sex];
-  if (!table) return null;
-  const d = Math.min(MAX_AGE_DAYS, Math.max(0, Math.round(ageDays)));
-  return table[d];
+/** [L, M, S] for an indicator and sex at x (days, or cm for wfl), clamped to the table. */
+export function lmsFor(indicator, sex, x) {
+  const t = TABLES[indicator];
+  const table = t && t[sex];
+  if (!table || !Number.isFinite(Number(x))) return null;
+  const i = Math.min(table.length - 1, Math.max(0, Math.round((Number(x) - t.start) / t.step)));
+  return table[i];
 }
 
-/** z-score of a weight in GRAMS at an age. Null when it cannot be computed. */
-export function zScore(sex, ageDays, grams) {
-  const lms = lmsAt(sex, ageDays);
-  if (!lms || !(grams > 0)) return null;
+/** z-score of a value in the table's own unit (kg or cm). Null when it cannot be computed. */
+export function zOf(indicator, sex, x, value) {
+  const lms = lmsFor(indicator, sex, x);
+  if (!lms || !(value > 0)) return null;
   const [L, M, S] = lms;
-  const ratio = grams / 1000 / M;
+  const ratio = value / M;
   const z = L === 0 ? Math.log(ratio) / S : (Math.pow(ratio, L) - 1) / (L * S);
   return Number.isFinite(z) ? z : null;
 }
 
-/** Weight in grams at a given z-score and age. */
-export function weightAtZ(sex, ageDays, z) {
-  const lms = lmsAt(sex, ageDays);
+/** The value (kg or cm) at a z-score. */
+export function valueAt(indicator, sex, x, z) {
+  const lms = lmsFor(indicator, sex, x);
   if (!lms) return null;
   const [L, M, S] = lms;
-  const kg = L === 0 ? M * Math.exp(S * z) : M * Math.pow(1 + L * S * z, 1 / L);
-  return Number.isFinite(kg) ? Math.round(kg * 1000) : null;
+  const v = L === 0 ? M * Math.exp(S * z) : M * Math.pow(1 + L * S * z, 1 / L);
+  return Number.isFinite(v) ? v : null;
+}
+
+// Weight-for-age in grams: the names the weight card was built on.
+
+/** [L, M, S] for weight-for-age at an age. Null for a bad sex. */
+export function lmsAt(sex, ageDays) {
+  return lmsFor('wfa', sex, ageDays);
+}
+
+/** z-score of a weight in GRAMS at an age. */
+export function zScore(sex, ageDays, grams) {
+  return grams > 0 ? zOf('wfa', sex, ageDays, grams / 1000) : null;
+}
+
+/** Weight in grams at a given z-score and age. */
+export function weightAtZ(sex, ageDays, z) {
+  const kg = valueAt('wfa', sex, ageDays, z);
+  return kg == null ? null : Math.round(kg * 1000);
 }
 
 /** Standard normal CDF (Abramowitz & Stegun 26.2.17, error < 7.5e-8). */

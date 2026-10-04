@@ -193,16 +193,17 @@ src/
     sync.js        SyncEngine: flush, pull, realtime, status
     analytics.js   comparison series, heatmap, feed rhythm, predictions
     weight.js      weigh-ins, ranges, formatting
-    who.js         WHO weight-for-age LMS maths: z-scores, percentiles
-    growth.js      percentile placement, trend, milestones, chart bands
+    who.js         WHO LMS maths for weight, length, head and weight-for-length
+    growth.js      the three measurements: placement, trend, milestones, bands
     files.js       backup / restore / CSV export
     backup.js      reads Seli and original-ChEckIn backup files
     push.js        optional push subscription
     config.js      env vars + optional runtime override
-  data/            WHO Child Growth Standards weight-for-age tables (girls, boys),
-                   daily LMS parameters, birth to two years — the WHO's data,
+  data/            WHO Child Growth Standards tables (girls, boys): weight,
+                   length and head for age, daily LMS from birth to two years,
+                   and weight for length per 0.1 cm — the WHO's data,
                    reproduced for computational use
-  components/      Header, TaskCard, Tiles, WeightCard, Overview,
+  components/      Header, TaskCard, Tiles, GrowthCard, Overview,
                    PatternsCard, DayLog, Toast
   store.js         the one hook that owns events, sync and prefs
   theme.js         design tokens + automatic day/night

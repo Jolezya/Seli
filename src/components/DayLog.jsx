@@ -11,6 +11,7 @@ import {
 import { eventsOnDay, isTimedType, durationOf, ALL_TYPES, matchEvents, poopSize, POOP_SIZES } from '../lib/events.js';
 import { toCSV, download, stamp, readFile } from '../lib/files.js';
 import { formatTemp, toTenths } from '../lib/temp.js';
+import { formatMeasure, parseMeasure } from '../lib/growth.js';
 
 const LABELS = {
   nurse: { emoji: '🤱', name: 'Nursing' },
@@ -28,6 +29,8 @@ const LABELS = {
   bath: { emoji: '🛁', name: 'Bath' },
   medicine: { emoji: '💊', name: 'Medicine' },
   temp: { emoji: '🌡️', name: 'Temperature' },
+  length: { emoji: '📏', name: 'Length' },
+  head: { emoji: '👶', name: 'Head' },
 };
 
 export default function DayLog({ theme, events, store, now }) {
@@ -161,6 +164,7 @@ function Entry({ theme, event, now, onEdit }) {
   if (event.type === 'bottle' && event.amount != null) details.push(`${event.amount} ml`);
   if (event.type === 'weight' && event.amount != null) details.push(`${event.amount} g`);
   if (event.type === 'temp' && event.amount != null) details.push(formatTemp(event.amount));
+  if ((event.type === 'length' || event.type === 'head') && event.amount != null) details.push(formatMeasure(event.type, event.amount));
   if (event.type === 'poop') { if (poopSize(event)) details.push(poopSize(event)); }
   else if (event.side) details.push(`by ${event.side}`);
   if (timed) details.push(ongoing ? 'in progress' : formatDuration(durationOf(event, now)));
@@ -194,12 +198,13 @@ function Entry({ theme, event, now, onEdit }) {
 function EditDialog({ theme, event, store, onClose }) {
   const [start, setStart] = useState(toDatetimeLocal(event.start_ts));
   const [end, setEnd] = useState(event.end_ts ? toDatetimeLocal(event.end_ts) : '');
-  const [amount, setAmount] = useState(event.type === 'temp' && event.amount != null ? (event.amount / 10).toFixed(1) : (event.amount ?? ''));
+  const inCm = event.type === 'length' || event.type === 'head';
+  const [amount, setAmount] = useState((event.type === 'temp' || inCm) && event.amount != null ? (event.amount / 10).toFixed(1) : (event.amount ?? ''));
   const [descr, setDescr] = useState(event.descr ?? '');
   const [size, setSize] = useState(poopSize(event));
   const meta = LABELS[event.type] || { emoji: '•', name: event.type };
   const timed = isTimedType(event.type);
-  const hasAmount = event.type === 'bottle' || event.type === 'weight' || event.type === 'temp';
+  const hasAmount = event.type === 'bottle' || event.type === 'weight' || event.type === 'temp' || inCm;
 
   const save = () => {
     const patch = { start_ts: fromDatetimeLocal(start) ?? event.start_ts };
@@ -208,7 +213,12 @@ function EditDialog({ theme, event, store, onClose }) {
       store.showToast('The end is before the start — check the dates.');
       return;
     }
-    if (hasAmount) patch.amount = amount === '' ? null : event.type === 'temp' ? (toTenths(amount) ?? event.amount) : Number(amount);
+    if (hasAmount) {
+      patch.amount = amount === '' ? null
+        : event.type === 'temp' ? (toTenths(amount) ?? event.amount)
+        : inCm ? (parseMeasure(event.type, amount) ?? event.amount)
+        : Number(amount);
+    }
     if (event.type === 'note' || event.type === 'medicine') patch.descr = descr;
     if (event.type === 'poop') patch.side = size;
     store.update(event.id, patch);
@@ -256,9 +266,9 @@ function EditDialog({ theme, event, store, onClose }) {
         {hasAmount && (
           <label style={{ display: 'block', marginBottom: 10 }}>
             <Muted theme={theme} size={11} style={{ marginBottom: 4 }}>
-              {event.type === 'weight' ? 'Grams' : event.type === 'temp' ? 'Temperature (°C)' : 'Millilitres'}
+              {event.type === 'weight' ? 'Grams' : event.type === 'temp' ? 'Temperature (°C)' : inCm ? 'Centimetres' : 'Millilitres'}
             </Muted>
-            <input type={event.type === 'temp' ? 'text' : 'number'} inputMode={event.type === 'temp' ? 'decimal' : 'numeric'} value={amount} onChange={(e) => setAmount(e.target.value)} style={field} />
+            <input type={event.type === 'temp' || inCm ? 'text' : 'number'} inputMode={event.type === 'temp' || inCm ? 'decimal' : 'numeric'} value={amount} onChange={(e) => setAmount(e.target.value)} style={field} />
           </label>
         )}
 
@@ -309,6 +319,8 @@ const CLEAR_GROUPS = [
   { key: 'poop',     label: 'Poop',        types: ['poop'] },
   { key: 'bath',     label: 'Baths',       types: ['bath'] },
   { key: 'weight',   label: 'Weigh-ins',   types: ['weight'] },
+  { key: 'length',   label: 'Length',      types: ['length'] },
+  { key: 'head',     label: 'Head',        types: ['head'] },
   { key: 'vitd',     label: 'Vitamin D',   types: ['vitd'] },
   { key: 'massage',  label: 'Massage',     types: ['massage'] },
   { key: 'exercise', label: 'Exercise',    types: ['exercise'] },
