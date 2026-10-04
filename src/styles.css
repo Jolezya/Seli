@@ -27,6 +27,14 @@ body {
 button, input, select, textarea { font: inherit; }
 input { -webkit-appearance: none; appearance: none; }
 
+/* iPhone zooms the whole page into any field whose text is under 16px, and
+   leaves it zoomed after typing. 16px on touch screens stops that while
+   pinch-zoom stays available; mouse-driven screens keep the compact size.
+   !important because the fields set their size inline. */
+@media (pointer: coarse) {
+  input, select, textarea { font-size: 16px !important; }
+}
+
 /* The running-session dot. */
 @keyframes seli-pulse {
   0%, 100% { opacity: 1; transform: scale(1); }

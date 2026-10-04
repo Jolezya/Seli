@@ -104,15 +104,85 @@ describe('sync engine', () => {
   });
 
   it('a failed pull returns null rather than an empty list', async () => {
-    const engine = engineWith({
-      from: () => ({
-        select: () => ({ eq: () => ({ order: async () => ({ data: null, error: { message: 'offline' } }) }) }),
-      }),
-    });
+    const engine = engineWith(cappedServer([], { fail: { message: 'offline' } }));
     // An empty array here would look like "the household has no events" and
     // could wipe the view; null means "we learned nothing".
     expect(await engine.pull()).toBe(null);
     expect(engine.status().state).toBe(STATUS.ERROR);
+  });
+});
+
+/**
+ * A stand-in for PostgREST as Supabase runs it: every response is cut at
+ * `maxRows` rows (Supabase's default is 1000) unless a range asks for a
+ * smaller slice, and a count is reported only when asked for.
+ */
+function cappedServer(rows, { maxRows = 1000, fail = null } = {}) {
+  const requests = [];
+  const query = () => {
+    const q = { orders: [], range: null, count: null };
+    const run = async () => {
+      requests.push({ ...q });
+      if (fail) return { data: null, error: fail, count: null };
+      const sorted = [...rows].sort((a, b) => {
+        for (const [col, asc] of q.orders) {
+          if (a[col] < b[col]) return asc ? -1 : 1;
+          if (a[col] > b[col]) return asc ? 1 : -1;
+        }
+        return 0;
+      });
+      const [from, to] = q.range || [0, sorted.length - 1];
+      const slice = sorted.slice(from, to + 1).slice(0, maxRows);
+      return { data: slice, error: null, count: q.count ? rows.length : null };
+    };
+    const builder = {
+      select: (_cols, opts) => { q.count = opts?.count || null; return builder; },
+      eq: () => builder,
+      order: (col, opts) => { q.orders.push([col, opts?.ascending !== false]); return builder; },
+      range: (a, b) => { q.range = [a, b]; return builder; },
+      then: (resolve, reject) => run().then(resolve, reject),
+    };
+    return builder;
+  };
+  return { requests, from: () => query() };
+}
+
+describe('pulling every row', () => {
+  const many = (n) => Array.from({ length: n }, (_, i) => ({
+    id: `r${String(i).padStart(5, '0')}`, household: 'h', type: 'wet',
+    start_ts: 1_000_000 + i * 60_000, end_ts: null, amount: null, side: null, descr: null,
+  }));
+
+  it('gets past the server 1000-row cap, oldest row included', async () => {
+    const rows = many(2500);
+    const server = cappedServer(rows);
+    const engine = engineWith(server);
+    const pulled = await engine.pull();
+    expect(pulled).toHaveLength(2500);
+    expect(new Set(pulled.map((r) => r.id)).size).toBe(2500);
+    expect(pulled.some((r) => r.id === 'r00000')).toBe(true);   // the very first entry ever made
+  });
+
+  it('still gets everything when the server caps lower than a page', async () => {
+    const engine = engineWith(cappedServer(many(1300), { maxRows: 400 }));
+    expect(await engine.pull()).toHaveLength(1300);
+  });
+
+  it('a small household takes one request', async () => {
+    const server = cappedServer(many(40));
+    const engine = engineWith(server);
+    expect(await engine.pull()).toHaveLength(40);
+    expect(server.requests).toHaveLength(1);
+  });
+
+  it('an old measurement survives the sync that follows it', async () => {
+    const { reconcile } = await import('../src/lib/events.js');
+    const rows = many(1500);
+    const old = { ...rows[0], id: 'length-22-jul', type: 'length', amount: 490 };
+    rows[0] = old;
+    const engine = engineWith(cappedServer(rows));
+    const after = reconcile([old], await engine.pull(), new Set(), new Set());
+    expect(after.some((e) => e.id === 'length-22-jul')).toBe(true);
   });
 });
 

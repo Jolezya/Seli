@@ -14,6 +14,11 @@ import {
   queueUpsert, queueDelete, pendingUpsertIds, pendingDeleteIds, sanitizeQueue,
 } from './queue.js';
 
+/** Rows per request when pulling: Supabase's default cap. */
+const PULL_PAGE = 1000;
+/** A hard stop, far beyond any household: 200,000 rows. */
+const PULL_MAX_PAGES = 200;
+
 export const STATUS = {
   LOCAL_ONLY: 'local-only', // Supabase not configured
   SYNCED: 'synced',         // queue empty, last write acknowledged
@@ -157,25 +162,52 @@ export class SyncEngine {
     return this.status();
   }
 
-  /** Fetch every row for this household. Returns null on failure (never []). */
+  /**
+   * Fetch every row for this household. Returns null on failure (never []).
+   *
+   * In pages. Supabase cuts every response at its "max rows" setting, 1000
+   * by default, without an error — so a single request returned only the
+   * newest 1000 rows, and once a household passed that, everything older
+   * was missing from the snapshot. reconcile() reads a row missing from the
+   * snapshot as deleted on the other phone and drops it from the screen:
+   * a backdated measurement appeared, then vanished at the next sync.
+   *
+   * The order is total (start_ts, then id) so pages never overlap or skip,
+   * rows are de-duplicated by id in case one is written mid-pull, and the
+   * loop stops on an empty page rather than a short one, because the
+   * server's cap may be smaller than our page.
+   */
   async pull() {
     if (!this.configured) return null;
-    const { data, error } = await this.client
-      .from('events')
-      .select('*')
-      .eq('household', HOUSEHOLD)
-      .order('start_ts', { ascending: false });
+    const byId = new Map();
+    let offset = 0;
+    let total = null;
+    for (let page = 0; page < PULL_MAX_PAGES; page++) {
+      const { data, error, count } = await this.client
+        .from('events')
+        .select('*', page === 0 ? { count: 'exact' } : undefined)
+        .eq('household', HOUSEHOLD)
+        .order('start_ts', { ascending: false })
+        .order('id', { ascending: true })
+        .range(offset, offset + PULL_PAGE - 1);
 
-    if (error) {
-      this.error = describeError(error);
-      this.emit();
-      return null;
+      if (error) {
+        this.error = describeError(error);
+        this.emit();
+        return null;
+      }
+      if (page === 0 && Number.isFinite(count)) total = count;
+      const rows = data || [];
+      for (const row of rows) byId.set(row.id, row);
+      offset += rows.length;
+      if (rows.length === 0 || (total != null && offset >= total)) break;
     }
+
     this.error = null;
     this.lastSyncedAt = Date.now();
     writeJSON(`${KEYS.queue}.lastSync`, this.lastSyncedAt);
     this.emit();
-    return data || [];
+    return [...byId.values()];
   }
 
   /**
