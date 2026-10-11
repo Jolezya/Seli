@@ -5,7 +5,7 @@
 import React, { useState } from 'react';
 import { Card, CardTitle, Chip, Button, Emoji, haptic } from '../ui.jsx';
 import { categoryColor, categoryTint } from '../theme.js';
-import { clockTime, formatDuration, timeAgo, whenLabel, MINUTE } from '../lib/time.js';
+import { clockTime, formatDuration, timeAgo, whenLabel, shortDate, MINUTE, DAY } from '../lib/time.js';
 import { eventsOnDay, openSession, totalDurationOnDay, lastMedicine, recentMedicineNames } from '../lib/events.js';
 import { msLeftInDay, leftLabel, taskTone, nextTummyGoal } from '../lib/tasks.js';
 import { bathSchedule, toggleDay, WEEKDAYS, DEFAULT_BATH_DAYS } from '../lib/bath.js';
@@ -32,6 +32,17 @@ export default function TaskCard({ theme, events, store, now }) {
   // Bath is a fifth task on scheduled days only, so the other five days stay
   // uncluttered. The count follows.
   const bathDays = store.prefs.bathDays ?? DEFAULT_BATH_DAYS;
+
+  // Medicine is for when she is ill; the rest of the time it can step aside,
+  // with a way back at the foot of the card.
+  const showMedicine = store.prefs.showMedicine !== false;
+  const hideMedicine = () => {
+    store.setPrefs({ showMedicine: false });
+    store.showToast('Medicine hidden. "Show medicine" at the bottom of this card brings it back.', {
+      label: 'Undo',
+      run: () => { store.setPrefs({ showMedicine: true }); store.dismissToast(); },
+    }, 8000);
+  };
   const bath = bathSchedule(events, bathDays, now);
   const total = 4 + (bath.isBathDay ? 1 : 0);
   const doneCount = [vitd, massage, exercise].filter(Boolean).length + (tummyDone ? 1 : 0)
@@ -184,9 +195,23 @@ export default function TaskCard({ theme, events, store, now }) {
         </TaskRow>
       </div>
 
-      <Medicine theme={theme} events={events} store={store} now={now} />
+      {showMedicine && <Medicine theme={theme} events={events} store={store} now={now} onHide={hideMedicine} />}
 
-      <BathDays theme={theme} days={bathDays} onToggle={(d) => store.setPrefs({ bathDays: toggleDay(bathDays, d) })} />
+      <BathDays
+        theme={theme}
+        days={bathDays}
+        onToggle={(d) => store.setPrefs({ bathDays: toggleDay(bathDays, d) })}
+        after={!showMedicine && (
+          <button
+            type="button"
+            onClick={() => { haptic(); store.setPrefs({ showMedicine: true }); }}
+            style={{
+              appearance: 'none', marginLeft: 'auto', border: `1px solid ${theme.line}`, background: 'transparent',
+              color: theme.inkSoft, borderRadius: 999, padding: '4px 10px', fontSize: 11.5, fontWeight: 600, cursor: 'pointer',
+            }}
+          >💊 Show medicine</button>
+        )}
+      />
     </Card>
   );
 }
@@ -196,7 +221,7 @@ export default function TaskCard({ theme, events, store, now }) {
  * n/5, but it sits with the care items because that is where a parent looks
  * for "when did she last have it?". Logs a 'medicine' row with the name.
  */
-function Medicine({ theme, events, store, now }) {
+function Medicine({ theme, events, store, now, onHide }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const accent = categoryColor(theme, 'medicine');
@@ -220,10 +245,19 @@ function Medicine({ theme, events, store, now }) {
           <div style={{ fontSize: 13.5, color: theme.ink, fontWeight: 500 }}>Medicine</div>
           <div style={{ fontSize: 12, color: last ? theme.inkSoft : theme.inkFaint, marginTop: 1 }}>
             {last
-              ? `${last.descr || 'given'} · ${whenLabel(last.start_ts, now)} · ${timeAgo(last.start_ts, now)}`
+              ? `${last.descr || 'given'} · ${now - last.start_ts > 6 * DAY ? `${shortDate(last.start_ts)} ${clockTime(last.start_ts)}` : whenLabel(last.start_ts, now)} · ${timeAgo(last.start_ts, now)}`
               : 'nothing given yet'}
           </div>
         </div>
+        <button
+          type="button"
+          onClick={onHide}
+          aria-label="Hide medicine"
+          style={{
+            appearance: 'none', border: 'none', background: 'transparent', color: theme.inkFaint,
+            fontSize: 12, fontWeight: 600, padding: '6px 4px', cursor: 'pointer',
+          }}
+        >Hide</button>
         <Button theme={theme} tone={open ? 'accent' : 'plain'} onClick={() => setOpen((v) => !v)} style={{ padding: '6px 12px' }}>Give</Button>
       </div>
 
@@ -254,7 +288,7 @@ function Medicine({ theme, events, store, now }) {
 }
 
 /** The bath schedule: seven small day chips, the scheduled ones filled. */
-function BathDays({ theme, days, onToggle }) {
+function BathDays({ theme, days, onToggle, after = null }) {
   const accent = categoryColor(theme, 'bath');
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 12, flexWrap: 'wrap' }}>
@@ -278,6 +312,7 @@ function BathDays({ theme, days, onToggle }) {
           >{w.short}</button>
         );
       })}
+      {after}
     </div>
   );
 }
