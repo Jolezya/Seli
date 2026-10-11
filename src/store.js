@@ -41,6 +41,8 @@ const DEFAULT_PREFS = {
   lockScreen: true,
   // Which tab the Growth card opens on: weight, length or head.
   growthTab: 'weight',
+  // The Medicine row in Today's tasks, hidden while she is well.
+  showMedicine: true,
 };
 
 /** Periodic safety-net flush + pull, in case realtime or a retry was missed. */
