@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { msLeftInDay, leftLabel, taskTone, NUDGE_MS } from '../src/lib/tasks.js';
+import { msLeftInDay, leftLabel, taskTone, NUDGE_MS, TUMMY_GOALS, nextTummyGoal } from '../src/lib/tasks.js';
 import { HOUR, MINUTE } from '../src/lib/time.js';
 
 const at = (h, m = 0) => { const d = new Date(2026, 8, 5, h, m, 0, 0); return d.getTime(); };
@@ -37,5 +37,19 @@ describe('taskTone', () => {
   });
   it('is done whenever every task is ticked, whatever the hour', () => {
     expect(taskTone({ allDone: true, now: at(23, 30) })).toBe('done');
+  });
+});
+
+describe('tummy-time goal', () => {
+  it('steps by 5 minutes from 5 to 60', () => {
+    expect(TUMMY_GOALS[0]).toBe(5);
+    expect(TUMMY_GOALS.at(-1)).toBe(60);
+    for (let i = 1; i < TUMMY_GOALS.length; i++) expect(TUMMY_GOALS[i] - TUMMY_GOALS[i - 1]).toBe(5);
+  });
+  it('goes 20 to 25, not 30, and wraps after an hour', () => {
+    expect(nextTummyGoal(20)).toBe(25);
+    expect(nextTummyGoal(15)).toBe(20);
+    expect(nextTummyGoal(60)).toBe(5);
+    expect(nextTummyGoal(17)).toBe(5);
   });
 });

@@ -5,6 +5,18 @@
 
 import { startOfLocalDay, addDays, formatDuration, HOUR, MINUTE } from './time.js';
 
+/**
+ * The daily tummy-time goals the chip steps through: 5 to 60 minutes in
+ * 5-minute steps, wrapping back to 5 after an hour. Sixty is where the
+ * usual advice ends up by about three months, spread across the day.
+ */
+export const TUMMY_GOALS = Array.from({ length: 12 }, (_, i) => (i + 1) * 5);
+
+/** The goal after `goal`; anything not on the list starts again at the first. */
+export function nextTummyGoal(goal) {
+  return TUMMY_GOALS[(TUMMY_GOALS.indexOf(goal) + 1) % TUMMY_GOALS.length];
+}
+
 /** Under this much day left with tasks open, the card nudges (spec §6). */
 export const NUDGE_MS = 2 * HOUR;
 
